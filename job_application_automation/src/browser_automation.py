@@ -8,11 +8,13 @@ import os
 import time
 import json
 import logging
+import random
 from typing import List, Dict, Optional, Any, Union
 
 # Import browser-use
-from browser_use import Agent, Browser, Page
-from browser_use.tools.web_search import WebSearch
+from browser_use import Agent, Browser, Page, ElementHandle
+
+# ...existing code...
 
 # Import configuration
 import sys

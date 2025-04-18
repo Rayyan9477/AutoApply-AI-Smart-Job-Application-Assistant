@@ -3,7 +3,7 @@ Configuration settings for web scraping using Crawl4AI.
 """
 import os
 from pydantic import BaseModel
-from typing import Optional, Dict, List, Literal
+from typing import Optional, Dict, List, Literal, Any
 from dotenv import load_dotenv
 
 # Load environment variables

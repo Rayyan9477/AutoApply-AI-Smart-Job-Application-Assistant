@@ -291,23 +291,18 @@ class ResumeGenerator:
     def _setup_llm(self) -> None:
         """Set up the LLM for text generation."""
         try:
-            # Check if the model file exists
             if not os.path.exists(self.config.model_path):
                 logger.warning(f"Model file not found at {self.config.model_path}")
-                logger.warning("Please download the model file or update the configuration.")
                 self.llm = None
                 return
-                
-            # Initialize the LLM
+            # Initialize the LLM with correct parameters
             self.llm = Llama(
                 model_path=self.config.model_path,
-                n_gpu_layers=self.config.n_gpu_layers,
-                n_ctx=self.config.n_ctx,
-                embedding=self.config.embedding_mode
+                n_ctx=self.config.context_length,
+                n_gpu_layers=self.config.gpu_layers,
+                use_mlock=self.config.use_gpu
             )
-            
             logger.info(f"LLM initialized with {self.config.model_path}")
-            
         except Exception as e:
             logger.error(f"Error initializing LLM: {e}")
             self.llm = None
@@ -623,46 +618,24 @@ class ResumeGenerator:
             return ""
             
         try:
-            # Set default parameters
+            # Prepare parameters
             params = {
                 "temperature": self.config.temperature,
                 "top_p": self.config.top_p,
-                "top_k": self.config.top_k,
-                "max_tokens": self.config.max_tokens,
-                "repeat_penalty": self.config.repeat_penalty
+                "max_tokens": self.config.context_length // 2
             }
-            
-            # Update with user-provided parameters
             params.update(kwargs)
-            
-            # Generate text with system prompt if provided
-            if system_prompt:
-                messages = [
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": prompt}
-                ]
-                response = self.llm.create_chat_completion(
-                    messages=messages,
-                    **params
-                )
-            else:
-                response = self.llm.create_completion(
-                    prompt=prompt,
-                    **params
-                )
-                
-            # Extract the generated text
-            if isinstance(response, dict) and "choices" in response:
-                if "message" in response["choices"][0]:
-                    # Chat completion
-                    return response["choices"][0]["message"]["content"]
-                else:
-                    # Text completion
-                    return response["choices"][0]["text"]
-            else:
-                logger.warning(f"Unexpected LLM response format: {response}")
-                return ""
-                
+            # Combine system + user prompt if provided
+            full_prompt = f"{system_prompt}\n{prompt}" if system_prompt else prompt
+            # Call LLM
+            response = self.llm(full_prompt, **params)
+            # Extract text
+            text = ""
+            if hasattr(response, 'choices'):
+                text = response.choices[0].text
+            elif isinstance(response, dict) and 'choices' in response:
+                text = response['choices'][0]['text']
+            return text.strip()
         except Exception as e:
             logger.error(f"Error generating text with LLM: {e}")
             return ""

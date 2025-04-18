@@ -10,6 +10,7 @@ import json
 import logging
 import asyncio
 import requests
+import random
 from typing import List, Dict, Any, Optional, Union
 from datetime import datetime, timedelta
 
@@ -51,84 +52,14 @@ class LinkedInIntegration:
         self.token_expiry = None
         
     def _setup_mcp_server(self) -> None:
-        """Set up the MCP server for LinkedIn integration."""
-        # Ensure session storage directory exists
+        """Stub out MCP server setup; LinkedIn MCP API disabled."""
         os.makedirs(self.config.session_storage_path, exist_ok=True)
-        
-        # Import required modules only when used
-        try:
-            # Using a relative import for the linkedin_mcp module
-            from linkedin_mcp import LinkedInMCPServer
-            
-            # Initialize the MCP server
-            self.mcp_server = LinkedInMCPServer(
-                host=self.config.mcp_server_host,
-                port=self.config.mcp_server_port,
-                debug=self.config.mcp_server_debug
-            )
-            logger.info(f"LinkedIn MCP server initialized at {self.config.mcp_server_host}:{self.config.mcp_server_port}")
-        except ImportError as e:
-            logger.error(f"Failed to import linkedin_mcp: {e}")
-            logger.error("Please ensure the linkedin_mcp package is installed.")
-            self.mcp_server = None
+        logger.warning("LinkedIn MCP API disabled; mcp_server not available.")
+        self.mcp_server = None
             
     async def authenticate(self) -> bool:
-        """
-        Authenticate with LinkedIn using OAuth 2.0.
-        
-        Returns:
-            True if authentication was successful, False otherwise.
-        """
-        # Check if we already have a valid token
-        if self._is_token_valid():
-            logger.info("Using existing LinkedIn access token")
-            return True
-            
-        # Import required modules only when used
-        try:
-            from linkedin_mcp.auth import LinkedInOAuth2
-            
-            # Initialize OAuth2 handler
-            oauth = LinkedInOAuth2(
-                client_id=self.config.client_id,
-                client_secret=self.config.client_secret.get_secret_value(),
-                redirect_uri=self.config.redirect_uri,
-                scopes=self.config.scopes
-            )
-            
-            # Start authentication flow
-            auth_url = oauth.get_authorization_url()
-            logger.info(f"Please open this URL to authenticate with LinkedIn: {auth_url}")
-            
-            # In a real application, this would redirect the user to auth_url
-            # and then capture the authorization code from the callback
-            # For this example, we'll simulate manual input of the authorization code
-            print(f"Please open this URL in your browser:")
-            print(auth_url)
-            print("After authenticating, you will be redirected. Copy the 'code' parameter from the URL and enter it here:")
-            auth_code = input("Enter authorization code: ")
-            
-            # Exchange the authorization code for an access token
-            token_info = oauth.get_access_token(auth_code)
-            
-            if token_info and "access_token" in token_info:
-                self.access_token = token_info["access_token"]
-                # Set token expiry (default to 1 hour if not provided)
-                expires_in = token_info.get("expires_in", 3600)
-                self.token_expiry = datetime.now() + timedelta(seconds=expires_in)
-                
-                # Save token to session
-                self._save_token(token_info)
-                
-                logger.info("LinkedIn authentication successful")
-                return True
-            else:
-                logger.error("Failed to obtain LinkedIn access token")
-                return False
-                
-        except Exception as e:
-            logger.error(f"LinkedIn authentication error: {e}")
-            return False
+        logger.warning("LinkedIn API disabled; authentication not available.")
+        return False
             
     def _is_token_valid(self) -> bool:
         """
@@ -140,7 +71,7 @@ class LinkedInIntegration:
         if not self.access_token or not self.token_expiry:
             # Try to load from session
             token_info = self._load_token()
-            if token_info:
+            if (token_info):
                 self.access_token = token_info.get("access_token")
                 expires_at = token_info.get("expires_at")
                 if expires_at:
@@ -202,78 +133,8 @@ class LinkedInIntegration:
                    keywords: Optional[List[str]] = None,
                    location: Optional[str] = None,
                    count: Optional[int] = None) -> List[Dict[str, Any]]:
-        """
-        Search for jobs on LinkedIn.
-        
-        Args:
-            keywords: List of job keywords to search for.
-            location: Location to search for jobs.
-            count: Number of job results to return.
-            
-        Returns:
-            A list of job listings from LinkedIn.
-        """
-        if not self._is_token_valid():
-            success = await self.authenticate()
-            if not success:
-                logger.error("LinkedIn authentication required")
-                return []
-                
-        keywords_str = " ".join(keywords) if keywords else ""
-        count = count or self.config.default_job_search_count
-        
-        try:
-            # Use LinkedIn MCP to search for jobs
-            from linkedin_mcp.jobs import JobSearch
-            
-            job_search = JobSearch(
-                access_token=self.access_token,
-                base_url=str(self.config.api_base_url)
-            )
-            
-            # Convert filter parameters to LinkedIn API format
-            filters = {}
-            if self.config.job_search_filters.get("locations"):
-                filters["location"] = self.config.job_search_filters["locations"]
-                
-            if location:
-                # Override with specified location if provided
-                filters["location"] = [location]
-                
-            if self.config.job_search_filters.get("industries"):
-                filters["industry"] = self.config.job_search_filters["industries"]
-                
-            if self.config.job_search_filters.get("experience"):
-                filters["experience"] = self.config.job_search_filters["experience"]
-                
-            if self.config.job_search_filters.get("job_types"):
-                filters["job_type"] = self.config.job_search_filters["job_types"]
-                
-            # Perform job search
-            results = await job_search.search(
-                keywords=keywords_str,
-                count=count,
-                filters=filters
-            )
-            
-            # Process search results
-            job_listings = []
-            if results and "elements" in results:
-                for job in results["elements"]:
-                    job_listing = self._parse_linkedin_job(job)
-                    if job_listing:
-                        job_listings.append(job_listing)
-                        
-            logger.info(f"Found {len(job_listings)} jobs on LinkedIn")
-            
-            # Save job listings to a file
-            self._save_job_listings(job_listings)
-            
-            return job_listings
-            
-        except Exception as e:
-            logger.error(f"LinkedIn job search error: {e}")
-            return []
+        logger.warning("LinkedIn API disabled; search not available.")
+        return []
             
     def _parse_linkedin_job(self, job_data: Dict[str, Any]) -> Dict[str, Any]:
         """

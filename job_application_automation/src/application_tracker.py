@@ -12,7 +12,7 @@ from sqlalchemy import func, case
 
 from .database import get_db, execute_with_retry
 from .models import JobApplication, ApplicationInteraction, JobSkill, SearchHistory
-from .logging_config import AuditLogger
+from config.logging_config import AuditLogger
 from .database_errors import handle_db_errors, with_retry, safe_commit, DatabaseError
 
 # Set up logging

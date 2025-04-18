@@ -10,10 +10,7 @@ import asyncio
 from typing import List, Dict, Any, Optional, Union
 
 # Import Crawl4AI
-from crawl4ai.api import Crawler
-from crawl4ai.dispatcher import MemoryAdaptiveDispatcher
-from crawl4ai.strategies import BestFirstCrawlerStrategy, BFSCrawlerStrategy, DFSCrawlerStrategy
-from crawl4ai.extractors import ContentExtractor
+from crawl4ai import Crawler, MemoryAdaptiveDispatcher, BestFirstCrawlerStrategy, BFSCrawlerStrategy, DFSCrawlerStrategy, ContentExtractor
 
 # Import configuration
 import sys
