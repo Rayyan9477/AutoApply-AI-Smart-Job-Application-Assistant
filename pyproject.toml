@@ -1,0 +1,18 @@
+[project]
+name = "linkedin"
+version = "0.1.0"
+description = "Add your description here"
+requires-python = ">=3.12"
+dependencies = [
+    "alembic>=1.15.2",
+    "browser-use>=0.1.40",
+    "config>=0.5.1",
+    "crawl4ai>=0.5.0.post8",
+    "docx>=0.2.4",
+    "docxtpl>=0.19.1",
+    "dotenv>=0.9.9",
+    "pydantic>=2.11.3",
+    "python-json-logger>=3.3.0",
+    "sqlalchemy>=2.0.40",
+    "structlog>=25.2.0",
+]

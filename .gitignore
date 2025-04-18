@@ -1,0 +1,8 @@
+
+.qodo
+.idea
+.venv
+.vs-code
+__pycache__
+./*.pyc
+./__pycache__

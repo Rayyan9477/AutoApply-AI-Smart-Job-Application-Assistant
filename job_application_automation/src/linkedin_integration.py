@@ -335,164 +335,19 @@ class LinkedInIntegration:
             logger.error(f"Error saving LinkedIn job listings: {e}")
             
     async def get_job_description(self, job_id: str) -> Dict[str, Any]:
-        """
-        Get detailed job description for a specific job.
-        
-        Args:
-            job_id: LinkedIn job ID.
-            
-        Returns:
-            Job description as a dictionary.
-        """
-        if not self._is_token_valid():
-            success = await self.authenticate()
-            if not success:
-                logger.error("LinkedIn authentication required")
-                return {}
-                
-        try:
-            # Use LinkedIn MCP to get job details
-            from linkedin_mcp.jobs import JobDetails
-            
-            job_details = JobDetails(
-                access_token=self.access_token,
-                base_url=str(self.config.api_base_url)
-            )
-            
-            # Get job description
-            description = await job_details.get_job_description(job_id)
-            
-            return description or {}
-            
-        except Exception as e:
-            logger.error(f"Error getting LinkedIn job description: {e}")
-            return {}
+        logger.warning("LinkedIn API integration removed; use web_scraping.JobDetailsScraper instead")
+        return {}
             
     async def get_user_profile(self) -> Dict[str, Any]:
-        """
-        Get the user's LinkedIn profile.
-        
-        Returns:
-            User profile as a dictionary.
-        """
-        if not self._is_token_valid():
-            success = await self.authenticate()
-            if not success:
-                logger.error("LinkedIn authentication required")
-                return {}
-                
-        try:
-            # Use LinkedIn MCP to get user profile
-            from linkedin_mcp.profile import UserProfile
-            
-            user_profile = UserProfile(
-                access_token=self.access_token,
-                base_url=str(self.config.api_base_url)
-            )
-            
-            # Get basic profile information
-            profile = await user_profile.get_profile()
-            
-            # Get additional profile details if available
-            if profile and "id" in profile:
-                try:
-                    # Get work experience
-                    experience = await user_profile.get_experience()
-                    if experience:
-                        profile["experience"] = experience
-                        
-                    # Get education
-                    education = await user_profile.get_education()
-                    if education:
-                        profile["education"] = education
-                        
-                    # Get skills
-                    skills = await user_profile.get_skills()
-                    if skills:
-                        profile["skills"] = skills
-                        
-                except Exception as e:
-                    logger.warning(f"Error getting additional profile details: {e}")
-                    
-            return profile or {}
-            
-        except Exception as e:
-            logger.error(f"Error getting LinkedIn user profile: {e}")
-            return {}
+        logger.warning("LinkedIn API integration removed; user profile not available")
+        return {}
             
     async def apply_to_job(self, 
                      job_id: str,
                      resume_path: Optional[str] = None,
                      cover_letter_path: Optional[str] = None) -> bool:
-        """
-        Apply to a job on LinkedIn.
-        
-        Args:
-            job_id: LinkedIn job ID.
-            resume_path: Path to resume file.
-            cover_letter_path: Path to cover letter file.
-            
-        Returns:
-            True if application was successful, False otherwise.
-        """
-        if not self.config.auto_apply_enabled:
-            logger.warning("Auto-apply is disabled in configuration")
-            return False
-            
-        # Check if we've exceeded the application rate limit
-        if not self._check_rate_limit_applications():
-            logger.warning("Application rate limit exceeded")
-            return False
-            
-        if not self._is_token_valid():
-            success = await self.authenticate()
-            if not success:
-                logger.error("LinkedIn authentication required")
-                return False
-                
-        # Use default resume path if not provided
-        resume_path = resume_path or self.config.resume_path
-        
-        if not os.path.exists(resume_path):
-            logger.error(f"Resume file not found at {resume_path}")
-            return False
-            
-        try:
-            # Use LinkedIn MCP to apply for the job
-            from linkedin_mcp.jobs import JobApplication
-            
-            job_application = JobApplication(
-                access_token=self.access_token,
-                base_url=str(self.config.api_base_url)
-            )
-            
-            # Prepare application files
-            files = {"resume": open(resume_path, "rb")}
-            
-            if cover_letter_path and os.path.exists(cover_letter_path):
-                files["cover_letter"] = open(cover_letter_path, "rb")
-                
-            # Submit application
-            result = await job_application.apply(
-                job_id=job_id,
-                files=files
-            )
-            
-            # Close file handles
-            for f in files.values():
-                f.close()
-                
-            if result and result.get("status") == "success":
-                logger.info(f"Successfully applied to job {job_id}")
-                self._update_application_history(job_id)
-                return True
-            else:
-                logger.error(f"Failed to apply to job {job_id}: {result.get('message', 'Unknown error')}")
-                return False
-                
-        except Exception as e:
-            logger.error(f"Error applying to LinkedIn job: {e}")
-            return False
+        logger.warning("LinkedIn API integration removed; use browser_automation.easy_apply_linkedin instead")
+        return False
             
     def _check_rate_limit_applications(self) -> bool:
         """

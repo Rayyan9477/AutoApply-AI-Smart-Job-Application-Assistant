@@ -11,6 +11,8 @@ import logging
 import argparse
 from typing import Dict, Any, List, Optional
 from datetime import datetime
+from tenacity import retry, stop_after_attempt, wait_exponential
+import random
 
 # Import project modules
 from browser_automation import JobSearchBrowser
@@ -108,6 +110,7 @@ class JobApplicationAutomation:
             
         return True
         
+    @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
     async def search_jobs(self, 
                    keywords: List[str], 
                    location: str, 

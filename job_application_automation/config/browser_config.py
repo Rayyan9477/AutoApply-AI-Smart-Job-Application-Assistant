@@ -33,7 +33,16 @@ class BrowserConfig(BaseModel):
     default_timeout: int = 30000  # milliseconds
     
     # User agent settings
-    user_agent: Optional[str] = None
+    user_agent: str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    
+    # WebGL vendor
+    webgl_vendor: str = "Google Inc. (NVIDIA)"
+    
+    # Platform
+    platform: str = "Win32"
+    
+    # Stealth mode
+    stealth_mode: bool = True  # Enable anti-detection measures
     
     # Screenshot and recording settings
     screenshots_dir: str = "../data/screenshots"
@@ -63,7 +72,6 @@ class BrowserConfig(BaseModel):
     question_timeout: int = 30
     
     # Enhanced browser settings 
-    stealth_mode: bool = False
     random_delays: bool = True
     min_delay: float = 1.0
     max_delay: float = 3.0
@@ -95,4 +103,8 @@ class BrowserConfig(BaseModel):
             user_profile_path=os.getenv("BROWSER_USER_PROFILE", None),
             default_navigation_timeout=int(os.getenv("BROWSER_NAVIGATION_TIMEOUT", "30000")),
             default_timeout=int(os.getenv("BROWSER_TIMEOUT", "30000")),
+            stealth_mode=os.getenv("STEALTH_MODE", "True").lower() == "true",
+            user_agent=os.getenv("USER_AGENT", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"),
+            webgl_vendor=os.getenv("WEBGL_VENDOR", "Google Inc. (NVIDIA)"),
+            platform=os.getenv("PLATFORM", "Win32"),
         )

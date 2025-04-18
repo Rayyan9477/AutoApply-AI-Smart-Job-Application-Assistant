@@ -9,7 +9,7 @@ The Automated Job Application System is an advanced tool designed to streamline 
 - **Multi-source Job Search**: Search for jobs across LinkedIn, Indeed, and Glassdoor.
 - **Intelligent Job Filtering**: Filter jobs based on skills, experience, and keywords.
 - **Personalized Document Generation**: Create tailored resumes and cover letters for each job using AI.
-- **Automated Application Submission**: Optionally submit applications automatically through LinkedIn.
+- **Automated Application Submission**: Submit applications automatically through LinkedIn.
 - **Job Match Scoring**: Calculate compatibility scores between your profile and job requirements.
 
 ## Technology Stack
