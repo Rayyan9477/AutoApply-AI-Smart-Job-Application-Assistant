@@ -3,7 +3,7 @@ Configuration settings for LinkedIn API integration and MCP functionality.
 """
 import os
 from pydantic import BaseModel, SecretStr, HttpUrl
-from typing import Optional, Dict, List, Literal
+from typing import Optional, Dict, List, Literal, Any
 from dotenv import load_dotenv
 
 # Load environment variables
@@ -39,7 +39,7 @@ class LinkedInMCPConfig(BaseModel):
     max_retries: int = 3
     
     # Job Search Settings
-    search_params: Dict[str, any] = {
+    search_params: Dict[str, Any] = {
         "keywords": [],
         "location": "",
         "distance": 25,  # miles
@@ -70,7 +70,7 @@ class LinkedInMCPConfig(BaseModel):
     save_failed_attempts: bool = True
     
     # AI Integration
-    ai_settings: Dict[str, any] = {
+    ai_settings: Dict[str, Any] = {
         "model": "gpt-4",  # or any other supported model
         "temperature": 0.7,
         "max_tokens": 1000,
@@ -91,7 +91,7 @@ class LinkedInMCPConfig(BaseModel):
     
     # Monitoring and Analytics
     enable_analytics: bool = True
-    analytics_settings: Dict[str, any] = {
+    analytics_settings: Dict[str, Any] = {
         "track_success_rate": True,
         "track_response_times": True,
         "track_error_rates": True,

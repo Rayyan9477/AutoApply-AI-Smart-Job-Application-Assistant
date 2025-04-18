@@ -10,16 +10,20 @@ import json
 import logging
 import random
 from typing import List, Dict, Optional, Any, Union
+import sys
+import os
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 
 # Import browser-use
-from browser_use import Agent, Browser, Page, ElementHandle
-
-# ...existing code...
+from browser_use import Agent, Browser
+from playwright.async_api import Page, ElementHandle
 
 # Import configuration
 import sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from config.browser_config import BrowserConfig
+
 
 # Set up logging
 logging.basicConfig(

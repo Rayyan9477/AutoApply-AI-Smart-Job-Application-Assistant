@@ -14,6 +14,11 @@ from datetime import datetime
 from tenacity import retry, stop_after_attempt, wait_exponential
 import random
 
+# Add project root to sys.path before any imports of project modules
+import sys
+import os
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 # Import project modules
 from browser_automation import JobSearchBrowser
 from web_scraping import JobDetailsScraper
@@ -22,8 +27,6 @@ from resume_cover_letter_generator import ResumeGenerator
 from application_tracker import ApplicationTracker
 
 # Import configuration
-import sys
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from config.browser_config import BrowserConfig
 from config.crawl4ai_config import Crawl4AIConfig
 from config.linkedin_mcp_config import LinkedInMCPConfig

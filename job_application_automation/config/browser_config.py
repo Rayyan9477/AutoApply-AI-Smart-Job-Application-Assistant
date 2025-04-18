@@ -5,6 +5,7 @@ import os
 from pydantic import BaseModel
 from typing import Optional, Dict, List, Union
 from dotenv import load_dotenv
+import browser_use
 
 # Load environment variables
 load_dotenv()
