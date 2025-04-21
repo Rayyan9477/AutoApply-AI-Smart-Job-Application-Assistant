@@ -11,6 +11,7 @@ from sqlalchemy import event
 from sqlalchemy.engine import Engine
 import csv
 import json
+import numpy as np
 from pathlib import Path
 
 # Set up logging
@@ -83,7 +84,7 @@ query_monitor = QueryPerformanceMonitor()
 
 @event.listens_for(Engine, "before_cursor_execute")
 def before_cursor_execute(conn, cursor, statement, parameters, context, executemany):
-    """Record query start time."""
+    """Record query start time.""" 
     conn.info.setdefault('query_start_time', []).append(time.time())
 
 @event.listens_for(Engine, "after_cursor_execute")
@@ -166,13 +167,169 @@ def analyze_query_patterns() -> Dict[str, Any]:
     
     return analysis
 
-# Add monitoring service class to existing file
+class VectorDatabaseMonitor:
+    """Monitor FAISS vector database performance."""
+    
+    def __init__(self):
+        self.vector_stats: Dict[str, Dict[str, Any]] = {}
+        self._lock = Lock()
+        self.slow_operation_threshold = 0.5  # seconds
+    
+    def record_operation(self, operation: str, index_name: str, duration: float, 
+                       vector_count: int = 1, success: bool = True) -> None:
+        """Record vector database operation statistics."""
+        op_key = f"{operation}:{index_name}"
+        
+        with self._lock:
+            if op_key not in self.vector_stats:
+                self.vector_stats[op_key] = {
+                    "operation": operation,
+                    "index_name": index_name,
+                    "count": 0,
+                    "total_time": 0.0,
+                    "min_time": float("inf"),
+                    "max_time": 0.0,
+                    "avg_time": 0.0,
+                    "total_vectors": 0,
+                    "success_rate": 100.0,
+                    "failures": 0,
+                    "last_executed": None
+                }
+            
+            stats = self.vector_stats[op_key]
+            stats["count"] += 1
+            stats["total_time"] += duration
+            stats["min_time"] = min(stats["min_time"], duration)
+            stats["max_time"] = max(stats["max_time"], duration)
+            stats["avg_time"] = stats["total_time"] / stats["count"]
+            stats["total_vectors"] += vector_count
+            stats["last_executed"] = datetime.utcnow()
+            
+            if not success:
+                stats["failures"] += 1
+                stats["success_rate"] = (stats["count"] - stats["failures"]) / stats["count"] * 100
+            
+            if duration > self.slow_operation_threshold:
+                logger.warning(
+                    f"Slow vector operation detected ({duration:.2f}s): "
+                    f"{operation} on index {index_name} with {vector_count} vectors"
+                )
+    
+    def get_performance_stats(self) -> Dict[str, Any]:
+        """Get comprehensive performance statistics."""
+        with self._lock:
+            summary = {
+                "total_operations": sum(s["count"] for s in self.vector_stats.values()),
+                "total_time": sum(s["total_time"] for s in self.vector_stats.values()),
+                "avg_time_per_op": 0.0,
+                "total_vectors_processed": sum(s["total_vectors"] for s in self.vector_stats.values()),
+                "success_rate": 0.0,
+                "operations_by_type": {},
+                "operations_by_index": {},
+                "slow_operations": []
+            }
+            
+            if summary["total_operations"] > 0:
+                summary["avg_time_per_op"] = summary["total_time"] / summary["total_operations"]
+                total_failures = sum(s["failures"] for s in self.vector_stats.values())
+                summary["success_rate"] = (summary["total_operations"] - total_failures) / summary["total_operations"] * 100
+            
+            # Group by operation type
+            for stats in self.vector_stats.values():
+                op_type = stats["operation"]
+                if op_type not in summary["operations_by_type"]:
+                    summary["operations_by_type"][op_type] = {
+                        "count": 0,
+                        "total_time": 0.0,
+                        "avg_time": 0.0
+                    }
+                
+                summary["operations_by_type"][op_type]["count"] += stats["count"]
+                summary["operations_by_type"][op_type]["total_time"] += stats["total_time"]
+                summary["operations_by_type"][op_type]["avg_time"] = (
+                    summary["operations_by_type"][op_type]["total_time"] / 
+                    summary["operations_by_type"][op_type]["count"]
+                )
+                
+            # Group by index name
+            for stats in self.vector_stats.values():
+                index = stats["index_name"]
+                if index not in summary["operations_by_index"]:
+                    summary["operations_by_index"][index] = {
+                        "count": 0,
+                        "total_time": 0.0,
+                        "avg_time": 0.0
+                    }
+                    
+                summary["operations_by_index"][index]["count"] += stats["count"]
+                summary["operations_by_index"][index]["total_time"] += stats["total_time"]
+                summary["operations_by_index"][index]["avg_time"] = (
+                    summary["operations_by_index"][index]["total_time"] / 
+                    summary["operations_by_index"][index]["count"]
+                )
+            
+            # Find slow operations
+            for op_key, stats in self.vector_stats.items():
+                if stats["avg_time"] > self.slow_operation_threshold:
+                    summary["slow_operations"].append({
+                        "operation": stats["operation"],
+                        "index_name": stats["index_name"],
+                        "avg_time": stats["avg_time"],
+                        "count": stats["count"]
+                    })
+            
+            return summary
+    
+    def reset_stats(self) -> None:
+        """Reset all vector operation statistics."""
+        with self._lock:
+            self.vector_stats.clear()
+
+# Create global vector monitor instance
+vector_monitor = VectorDatabaseMonitor()
+
+def time_vector_operation(operation_name: str):
+    """Decorator to time and monitor vector database operations."""
+    def decorator(func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            index_name = kwargs.get('index_name', 'unknown')
+            if args and len(args) > 1 and isinstance(args[1], str):
+                index_name = args[1]  # Most methods have index_name as second argument
+                
+            vector_count = 1
+            if 'items' in kwargs and isinstance(kwargs['items'], list):
+                vector_count = len(kwargs['items'])
+            elif 'texts' in kwargs and isinstance(kwargs['texts'], list):
+                vector_count = len(kwargs['texts'])
+                
+            start_time = time.time()
+            success = True
+            try:
+                result = func(*args, **kwargs)
+                return result
+            except Exception as e:
+                success = False
+                raise
+            finally:
+                duration = time.time() - start_time
+                vector_monitor.record_operation(
+                    operation=operation_name,
+                    index_name=index_name,
+                    duration=duration,
+                    vector_count=vector_count,
+                    success=success
+                )
+        return wrapper
+    return decorator
+
 class DatabaseMonitorService:
     """Service for monitoring database health and performance."""
     
-    def __init__(self, engine, monitor=query_monitor):
+    def __init__(self, engine, monitor=query_monitor, vector_monitor=vector_monitor):
         self.engine = engine
         self.monitor = monitor
+        self.vector_monitor = vector_monitor
         self.alerts = []
         self.last_check = None
         
@@ -435,3 +592,75 @@ class DatabaseMonitorService:
                 continue
                 
         return sorted(metrics_history, key=lambda x: x["timestamp"])
+    
+    def get_vector_db_metrics(self) -> Dict[str, Any]:
+        """Get vector database performance metrics."""
+        return self.vector_monitor.get_performance_stats()
+    
+    def export_vector_metrics(self, format: str = 'csv', output_dir: str = 'metrics') -> str:
+        """Export current vector database metrics to file."""
+        metrics = self.get_vector_db_metrics()
+        timestamp = datetime.utcnow().strftime("%Y%m%d-%H%M%S")
+        
+        # Ensure output directory exists
+        output_path = Path(output_dir)
+        output_path.mkdir(parents=True, exist_ok=True)
+        
+        if format == 'csv':
+            filepath = output_path / f"vector_metrics_{timestamp}.csv"
+            self._export_vector_metrics_csv(metrics, filepath)
+        else:
+            filepath = output_path / f"vector_metrics_{timestamp}.json"
+            self._export_vector_metrics_json(metrics, filepath)
+            
+        return str(filepath)
+    
+    def _export_vector_metrics_csv(self, metrics: dict, filepath: Path) -> None:
+        """Export vector database metrics to CSV format."""
+        with open(filepath, 'w', newline='') as f:
+            writer = csv.writer(f)
+            writer.writerow([
+                "Metric", "Value"
+            ])
+            
+            writer.writerow(["Total Operations", metrics["total_operations"]])
+            writer.writerow(["Total Time (s)", metrics["total_time"]])
+            writer.writerow(["Avg Time Per Op (s)", metrics["avg_time_per_op"]])
+            writer.writerow(["Success Rate (%)", metrics["success_rate"]])
+            writer.writerow(["Total Vectors Processed", metrics["total_vectors_processed"]])
+            
+            writer.writerow([])
+            writer.writerow(["Operation Type", "Count", "Total Time (s)", "Avg Time (s)"])
+            for op_type, stats in metrics["operations_by_type"].items():
+                writer.writerow([
+                    op_type,
+                    stats["count"],
+                    stats["total_time"],
+                    stats["avg_time"]
+                ])
+                
+            writer.writerow([])
+            writer.writerow(["Index", "Count", "Total Time (s)", "Avg Time (s)"])
+            for index, stats in metrics["operations_by_index"].items():
+                writer.writerow([
+                    index,
+                    stats["count"],
+                    stats["total_time"],
+                    stats["avg_time"]
+                ])
+                
+            writer.writerow([])
+            writer.writerow(["Slow Operations"])
+            writer.writerow(["Operation", "Index", "Avg Time (s)", "Count"])
+            for op in metrics["slow_operations"]:
+                writer.writerow([
+                    op["operation"],
+                    op["index_name"],
+                    op["avg_time"],
+                    op["count"]
+                ])
+    
+    def _export_vector_metrics_json(self, metrics: dict, filepath: Path) -> None:
+        """Export vector database metrics to JSON format."""
+        with open(filepath, 'w') as f:
+            json.dump(metrics, f, indent=2)

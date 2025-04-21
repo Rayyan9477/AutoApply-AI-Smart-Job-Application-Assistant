@@ -2,8 +2,8 @@
 Database models for job application automation system.
 """
 from datetime import datetime
-from typing import Optional
-from sqlalchemy import Column, Integer, String, Float, DateTime, Boolean, Text, ForeignKey
+from typing import Optional, List
+from sqlalchemy import Column, Integer, String, Float, DateTime, Boolean, Text, ForeignKey, LargeBinary
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
 
@@ -27,6 +27,10 @@ class JobApplication(Base):
     response_date = Column(DateTime)
     notes = Column(Text)
     url = Column(String(500))
+    # Added field for job description - useful for vector search
+    job_description = Column(Text)
+    # Added field for storing vector embedding
+    vector_embedding = Column(LargeBinary, nullable=True)
 
     # Relationships
     interactions = relationship("ApplicationInteraction", back_populates="application")
@@ -58,6 +62,8 @@ class JobSkill(Base):
     required = Column(Boolean, default=True)
     candidate_has = Column(Boolean)
     match_score = Column(Float)
+    # Added field for storing vector embedding
+    vector_embedding = Column(LargeBinary, nullable=True)
 
     # Relationship
     application = relationship("JobApplication", back_populates="skills")
@@ -74,3 +80,21 @@ class SearchHistory(Base):
     results_count = Column(Integer)
     filtered_count = Column(Integer)
     search_params = Column(Text)  # JSON string of additional parameters
+    # Added field for storing vector embedding of search query
+    vector_embedding = Column(LargeBinary, nullable=True)
+
+# New model for semantic search
+class VectorIndex(Base):
+    """Model for tracking FAISS vector indices."""
+    __tablename__ = "vector_indices"
+    
+    id = Column(Integer, primary_key=True)
+    index_name = Column(String(100), unique=True, nullable=False)
+    entity_type = Column(String(50), nullable=False)  # jobs, skills, searches, etc.
+    dimension = Column(Integer, nullable=False)
+    index_type = Column(String(20), nullable=False)  # Flat, HNSW, IVF, etc.
+    item_count = Column(Integer, default=0)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow)
+    index_path = Column(String(500))
+    meta_data = Column(Text)  # JSON string of additional metadata - renamed from 'metadata'

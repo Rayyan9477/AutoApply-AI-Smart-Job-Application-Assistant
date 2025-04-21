@@ -19,12 +19,18 @@ import sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from config.linkedin_mcp_config import LinkedInMCPConfig
 
-# Set up logging
+# Set up logging with absolute path for the log file
+project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+log_file_path = os.path.join(project_root, "data", "linkedin_integration.log")
+
+# Ensure log directory exists
+os.makedirs(os.path.dirname(log_file_path), exist_ok=True)
+
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler("../data/linkedin_integration.log"),
+        logging.FileHandler(log_file_path),
         logging.StreamHandler()
     ]
 )

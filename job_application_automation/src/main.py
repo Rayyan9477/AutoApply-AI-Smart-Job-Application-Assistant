@@ -25,6 +25,7 @@ from web_scraping import JobDetailsScraper
 from linkedin_integration import LinkedInIntegration
 from resume_cover_letter_generator import ResumeGenerator
 from application_tracker import ApplicationTracker
+from ats_integration import ATSIntegrationManager
 
 # Import configuration
 from config.browser_config import BrowserConfig
@@ -76,6 +77,10 @@ class JobApplicationAutomation:
         self.linkedin_integration = LinkedInIntegration(self.linkedin_config)
         self.resume_generator = ResumeGenerator(self.llama_config)
         
+        # Initialize ATS integration
+        self.ats_manager = ATSIntegrationManager(self.llama_config)
+        self.ats_manager.load_state()
+        
         # Application state
         self.job_listings = []
         self.job_details = []
@@ -85,6 +90,7 @@ class JobApplicationAutomation:
         # Create necessary directories
         os.makedirs("../data", exist_ok=True)
         os.makedirs("../data/generated_cover_letters", exist_ok=True)
+        os.makedirs("../data/ats_reports", exist_ok=True)
         
         # Initialize application tracker
         self.application_tracker = ApplicationTracker()
@@ -258,55 +264,127 @@ class JobApplicationAutomation:
             
         return filtered_jobs
         
+    @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
     async def generate_and_apply(self, 
                           filtered_jobs: List[Dict[str, Any]],
                           max_applications: int = 5,
-                          auto_apply: bool = False) -> int:
+                          auto_apply: bool = False,
+                          min_ats_score: float = 0.7,
+                          auto_optimize_resume: bool = True) -> int:
         """
-        Generate personalized resumes and cover letters for filtered jobs and apply.
+        Generate resumes and cover letters for jobs and optionally apply.
         
         Args:
-            filtered_jobs: List of filtered job details.
-            max_applications: Maximum number of applications to submit.
-            auto_apply: Whether to automatically submit applications.
+            filtered_jobs: List of filtered job listings
+            max_applications: Maximum number of applications to send
+            auto_apply: Whether to automatically apply to jobs
+            min_ats_score: Minimum ATS score required to proceed with application
+            auto_optimize_resume: Whether to automatically optimize resumes that don't meet the threshold
             
         Returns:
-            Number of applications submitted.
+            Number of applications submitted
         """
         if not filtered_jobs:
-            logger.warning("No filtered jobs available for application")
+            logger.warning("No filtered jobs provided for application")
             return 0
-            
+        
         applications_submitted = 0
         
-        # Process each job up to max_applications
+        logger.info(f"Starting to generate applications for {len(filtered_jobs)} filtered jobs")
+        
+        # Check if we have candidate profile loaded
+        if not self.candidate_profile:
+            self._load_candidate_profile()
+        
+        # Process each job
         for i, job in enumerate(filtered_jobs):
             if i >= max_applications:
-                logger.info(f"Reached maximum number of applications ({max_applications})")
                 break
                 
             try:
-                # Extract job description
-                job_description = job.get("job_description", "")
+                job_description = job.get("description", "")
+                
                 if not job_description:
-                    logger.warning(f"Skipping job {i+1} due to missing job description")
-                    continue
+                    # Try to fetch job description if not available
+                    if "job_id" in job and job["job_id"]:
+                        try:
+                            job_details = await self.linkedin_integration.get_job_description(job["job_id"])
+                            job_description = job_details.get("description", "")
+                        except Exception as e:
+                            logger.error(f"Error fetching job description: {e}")
+                    
+                    if not job_description:
+                        logger.warning(f"Skipping job {i+1} due to missing job description")
+                        continue
                     
                 # Extract company information
                 company_name = job.get("company", "")
                 company_info = f"Company: {company_name}\n"
                 
-                # Generate personalized resume
-                logger.info(f"Generating resume for job {i+1}: {job.get('job_title', 'Unknown')} at {company_name}")
-                resume_path, resume_content = self.resume_generator.generate_resume(
+                # Check if we have existing resume that has good ATS score for similar jobs
+                best_resume_path = self.ats_manager.get_best_resume_for_job(job_description)
+                
+                if best_resume_path and os.path.exists(best_resume_path):
+                    logger.info(f"Found previously optimized resume for similar job: {best_resume_path}")
+                    resume_path = best_resume_path
+                    # Read resume content for cover letter generation
+                    with open(resume_path, 'r', encoding='utf-8') as f:
+                        resume_content = f.read()
+                else:
+                    # Generate personalized resume
+                    logger.info(f"Generating resume for job {i+1}: {job.get('job_title', 'Unknown')} at {company_name}")
+                    resume_path, resume_content = self.resume_generator.generate_resume(
+                        job_description=job_description,
+                        candidate_profile=self.candidate_profile
+                    )
+                    
+                    if not resume_path or not resume_content:
+                        logger.warning(f"Failed to generate resume for job {i+1}")
+                        continue
+                
+                # Process the resume with ATS scoring and optimization
+                job_metadata = {
+                    "job_id": job.get("job_id", f"job_{i}"),
+                    "job_title": job.get("job_title", "Unknown"),
+                    "company": company_name,
+                    "source": job.get("source", "unknown")
+                }
+                
+                ats_result = self.ats_manager.process_job_application(
+                    resume_path=resume_path,
                     job_description=job_description,
-                    candidate_profile=self.candidate_profile
+                    job_metadata=job_metadata,
+                    min_score_threshold=min_ats_score,
+                    auto_optimize=auto_optimize_resume
                 )
                 
-                if not resume_path or not resume_content:
-                    logger.warning(f"Failed to generate resume for job {i+1}")
-                    continue
+                # Check if we should proceed with the application based on ATS score
+                if not ats_result["should_proceed"]:
+                    logger.warning(f"ATS score too low for job {i+1}. Skipping application.")
                     
+                    # Update application tracker with the status
+                    self.application_tracker.add_application(
+                        job_id=job.get("job_id", ""),
+                        job_title=job.get("job_title", "Unknown"),
+                        company=company_name,
+                        source=job.get("source", "unknown"),
+                        match_score=job.get("match_score", 0.0),
+                        resume_path=resume_path,
+                        cover_letter_path=None,
+                        notes=f"ATS score too low: {ats_result['original_score']['overall_score']}%"
+                    )
+                    continue
+                
+                # Use optimized resume if available
+                if ats_result.get("optimized_resume"):
+                    resume_path = ats_result["optimized_resume"]
+                    # Read optimized resume content
+                    try:
+                        with open(resume_path, 'r', encoding='utf-8') as f:
+                            resume_content = f.read()
+                    except Exception as e:
+                        logger.error(f"Error reading optimized resume: {e}")
+                
                 # Generate personalized cover letter
                 logger.info(f"Generating cover letter for job {i+1}: {job.get('job_title', 'Unknown')} at {company_name}")
                 cover_letter_path, cover_letter_content = self.resume_generator.generate_cover_letter(
@@ -323,12 +401,12 @@ class JobApplicationAutomation:
                 self.application_tracker.add_application(
                     job_id=job.get("job_id", ""),
                     job_title=job.get("job_title", "Unknown"),
-                    company=job.get("company", "Unknown"),
+                    company=company_name,
                     source=job.get("source", "unknown"),
                     match_score=job.get("match_score", 0.0),
                     resume_path=resume_path,
                     cover_letter_path=cover_letter_path,
-                    notes=f"Auto-applied: {auto_apply}"
+                    notes=f"ATS score: {ats_result['original_score']['overall_score']}%, Auto-applied: {auto_apply}"
                 )
                 
                 # Apply to the job if auto-apply is enabled
@@ -362,6 +440,7 @@ class JobApplicationAutomation:
                         logger.info(f"Auto-apply not available for job {i+1} (no LinkedIn job ID)")
                         logger.info(f"Resume: {resume_path}")
                         logger.info(f"Cover Letter: {cover_letter_path}")
+                        logger.info(f"ATS Report: {ats_result.get('report_path', 'N/A')}")
                         self.application_tracker.update_application_status(
                             job_id=job.get("job_id", ""),
                             status="pending",
@@ -372,6 +451,7 @@ class JobApplicationAutomation:
                     logger.info(f"Generated application materials for job {i+1}")
                     logger.info(f"Resume: {resume_path}")
                     logger.info(f"Cover Letter: {cover_letter_path}")
+                    logger.info(f"ATS Report: {ats_result.get('report_path', 'N/A')}")
                     self.application_tracker.update_application_status(
                         job_id=job.get("job_id", ""),
                         status="pending",
@@ -392,13 +472,12 @@ class JobApplicationAutomation:
                 
         self.applications_submitted = applications_submitted
         
+        # Save ATS state for future use
+        self.ats_manager.save_state()
+        
         # Generate application statistics
         stats = self.application_tracker.get_application_stats()
-        logger.info(f"Application Statistics: {json.dumps(stats, indent=2)}")
-        
-        # Get recommendations for future applications
-        recommendations = self.application_tracker.get_recommendations()
-        logger.info(f"Recommendations: {json.dumps(recommendations, indent=2)}")
+        logger.info(f"Application Summary: {stats['total']} processed, {applications_submitted} submitted")
         
         return applications_submitted
         
@@ -525,6 +604,10 @@ class JobApplicationAutomation:
             logger.error(f"Error calculating match score: {e}")
             return 0.5  # Default score on error
 
+    def generate_ats_performance_report(self) -> str:
+        """Generate a report on ATS performance over time."""
+        return self.ats_manager.generate_ats_performance_report()
+
 
 async def run_job_application_process(args):
     """
@@ -580,7 +663,9 @@ async def run_job_application_process(args):
     applications = await automation.generate_and_apply(
         filtered_jobs=filtered_jobs,
         max_applications=args.max_applications,
-        auto_apply=args.auto_apply
+        auto_apply=args.auto_apply,
+        min_ats_score=args.min_ats_score,
+        auto_optimize_resume=args.auto_optimize_resume
     )
     
     logger.info(f"Job application process completed. Applications submitted: {applications}")
@@ -625,6 +710,10 @@ def parse_arguments():
                       help="Maximum number of applications to submit")
     parser.add_argument("--auto-apply", action="store_true",
                       help="Enable automatic application submission")
+    parser.add_argument("--min-ats-score", type=float, default=0.7,
+                      help="Minimum ATS score (0-1) required for application")
+    parser.add_argument("--auto-optimize-resume", action="store_true",
+                      help="Automatically optimize resumes that don't meet ATS threshold")
     
     return parser.parse_args()
 

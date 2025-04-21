@@ -23,6 +23,9 @@ class LinkedInMCPConfig(BaseModel):
     job_search_url: str = "https://api.linkedin.com/v2/jobSearch"
     profile_url: str = "https://api.linkedin.com/v2/me"
     
+    # Session Storage
+    session_storage_path: str = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "sessions")
+    
     # OAuth Scopes
     scopes: List[str] = [
         "r_liteprofile",

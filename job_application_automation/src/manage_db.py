@@ -9,9 +9,13 @@ from pathlib import Path
 from datetime import datetime
 from alembic import command
 from alembic.config import Config
+import json
+import numpy as np
 
 from database import init_db, get_engine, check_database_connection, get_database_stats
-from models import Base
+from models import Base, JobApplication, JobSkill, SearchHistory, VectorIndex
+from vector_database import vector_db, VectorDatabaseService
+from database_monitor import DatabaseMonitorService, vector_monitor
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -310,6 +314,358 @@ def analyze():
                 logger.info(f"  {hour:02d}:00 - {count} queries")
     except Exception as e:
         logger.error(f"Error analyzing query patterns: {e}")
+        sys.exit(1)
+
+@cli.group()
+def vector():
+    """Manage FAISS vector database."""
+    pass
+
+@vector.command()
+@click.argument('index_name')
+@click.option('--dimension', '-d', default=384, help='Vector dimension')
+@click.option('--type', '-t', default='Flat', 
+              type=click.Choice(['Flat', 'HNSW', 'IVF']),
+              help='FAISS index type')
+@click.option('--entity-type', '-e', default='jobs',
+              type=click.Choice(['jobs', 'skills', 'searches']),
+              help='Entity type for this index')
+def create_index(index_name, dimension, type, entity_type):
+    """Create a new FAISS vector index."""
+    try:
+        logger.info(f"Creating {type} index '{index_name}' with dimension {dimension}")
+        success = vector_db.create_index(index_name, dimension, type)
+        
+        if success:
+            # Store index information in SQL database
+            from sqlalchemy.orm import Session
+            from database import get_db
+            
+            with get_db() as db:
+                index_record = VectorIndex(
+                    index_name=index_name,
+                    entity_type=entity_type,
+                    dimension=dimension,
+                    index_type=type,
+                    item_count=0,
+                    index_path=str(vector_db.index_dir / f"{index_name}.index")
+                )
+                db.add(index_record)
+                db.commit()
+                
+            logger.info(f"Successfully created index '{index_name}'")
+        else:
+            logger.error(f"Failed to create index '{index_name}'")
+            sys.exit(1)
+    except Exception as e:
+        logger.error(f"Error creating index: {e}")
+        sys.exit(1)
+
+@vector.command()
+@click.argument('index_name')
+def delete_index(index_name):
+    """Delete a FAISS vector index."""
+    try:
+        logger.info(f"Deleting index '{index_name}'")
+        success = vector_db.delete_index(index_name)
+        
+        if success:
+            # Remove index from SQL database
+            from sqlalchemy.orm import Session
+            from database import get_db
+            
+            with get_db() as db:
+                index_record = db.query(VectorIndex).filter_by(index_name=index_name).first()
+                if index_record:
+                    db.delete(index_record)
+                    db.commit()
+                    
+            logger.info(f"Successfully deleted index '{index_name}'")
+        else:
+            logger.error(f"Failed to delete index '{index_name}'")
+            sys.exit(1)
+    except Exception as e:
+        logger.error(f"Error deleting index: {e}")
+        sys.exit(1)
+
+@vector.command()
+def list_indices():
+    """List all FAISS vector indices."""
+    try:
+        logger.info("Listing vector indices")
+        from database import get_db
+        
+        # Get indices from SQL database
+        with get_db() as db:
+            indices = db.query(VectorIndex).all()
+            
+        if indices:
+            logger.info(f"Found {len(indices)} vector indices:")
+            for idx in indices:
+                logger.info(f"  {idx.index_name} - Type: {idx.index_type}, "
+                          f"Dimension: {idx.dimension}, Items: {idx.item_count}, "
+                          f"Entity: {idx.entity_type}")
+        else:
+            logger.info("No vector indices found")
+            
+        # Get FAISS index stats
+        stats = vector_db.get_index_stats()
+        if stats:
+            logger.info("\nFAISS index statistics:")
+            for name, data in stats.items():
+                logger.info(f"  {name}: {data['item_count']} items, "
+                          f"created: {data['created_at']}")
+        
+    except Exception as e:
+        logger.error(f"Error listing indices: {e}")
+        sys.exit(1)
+
+@vector.command()
+@click.argument('index_name')
+@click.option('--jobs', '-j', is_flag=True, help='Index job applications')
+@click.option('--skills', '-s', is_flag=True, help='Index job skills')
+@click.option('--searches', '-q', is_flag=True, help='Index search history')
+@click.option('--rebuild', '-r', is_flag=True, help='Rebuild index from scratch')
+def build_index(index_name, jobs, skills, searches, rebuild):
+    """Build or update a FAISS vector index from database records."""
+    try:
+        if not any([jobs, skills, searches]):
+            logger.error("Specify at least one entity type to index (--jobs, --skills, --searches)")
+            sys.exit(1)
+            
+        # Check if index exists, create if not
+        stats = vector_db.get_index_stats(index_name)
+        if not stats and not rebuild:
+            logger.error(f"Index '{index_name}' does not exist. Create it first or use --rebuild")
+            sys.exit(1)
+            
+        from database import get_db
+        
+        if jobs:
+            logger.info(f"Indexing job applications in '{index_name}'")
+            with get_db() as db:
+                # Get job applications
+                applications = db.query(JobApplication).all()
+                if not applications:
+                    logger.info("No job applications found to index")
+                else:
+                    # Prepare items for indexing
+                    items = []
+                    for app in applications:
+                        text = f"{app.job_title} {app.company} "
+                        if app.job_description:
+                            text += app.job_description
+                        items.append({
+                            "id": app.id,
+                            "text": text
+                        })
+                    
+                    # Create index if using rebuild
+                    if rebuild:
+                        vector_db.create_index(index_name, 384, "Flat")
+                        
+                    # Add items to index
+                    vector_db.add_items(index_name, items, text_field="text", id_field="id")
+                    logger.info(f"Indexed {len(items)} job applications")
+                    
+                    # Update index record
+                    index_record = db.query(VectorIndex).filter_by(index_name=index_name).first()
+                    if index_record:
+                        index_record.item_count = len(items)
+                        index_record.updated_at = datetime.utcnow()
+                        db.commit()
+        
+        if skills:
+            logger.info(f"Indexing job skills in '{index_name}'")
+            with get_db() as db:
+                # Get job skills
+                skills = db.query(JobSkill).all()
+                if not skills:
+                    logger.info("No job skills found to index")
+                else:
+                    # Prepare items for indexing
+                    items = []
+                    for skill in skills:
+                        text = f"{skill.skill_name} {skill.skill_category}"
+                        items.append({
+                            "id": skill.id,
+                            "text": text
+                        })
+                    
+                    # Create index if using rebuild
+                    if rebuild:
+                        vector_db.create_index(index_name, 384, "Flat")
+                        
+                    # Add items to index
+                    vector_db.add_items(index_name, items, text_field="text", id_field="id")
+                    logger.info(f"Indexed {len(items)} job skills")
+                    
+                    # Update index record
+                    index_record = db.query(VectorIndex).filter_by(index_name=index_name).first()
+                    if index_record:
+                        index_record.item_count = len(items)
+                        index_record.updated_at = datetime.utcnow()
+                        db.commit()
+        
+        if searches:
+            logger.info(f"Indexing search history in '{index_name}'")
+            with get_db() as db:
+                # Get search history
+                searches = db.query(SearchHistory).all()
+                if not searches:
+                    logger.info("No search history found to index")
+                else:
+                    # Prepare items for indexing
+                    items = []
+                    for search in searches:
+                        text = f"{search.keywords} {search.location}"
+                        items.append({
+                            "id": search.id,
+                            "text": text
+                        })
+                    
+                    # Create index if using rebuild
+                    if rebuild:
+                        vector_db.create_index(index_name, 384, "Flat")
+                        
+                    # Add items to index
+                    vector_db.add_items(index_name, items, text_field="text", id_field="id")
+                    logger.info(f"Indexed {len(items)} search history items")
+                    
+                    # Update index record
+                    index_record = db.query(VectorIndex).filter_by(index_name=index_name).first()
+                    if index_record:
+                        index_record.item_count = len(items)
+                        index_record.updated_at = datetime.utcnow()
+                        db.commit()
+    
+    except Exception as e:
+        logger.error(f"Error building index: {e}")
+        sys.exit(1)
+
+@vector.command()
+@click.argument('index_name')
+@click.argument('query')
+@click.option('--limit', '-l', default=10, help='Maximum number of results')
+@click.option('--entity-type', '-e', type=click.Choice(['jobs', 'skills', 'searches']),
+             help='Entity type to retrieve')
+def search(index_name, query, limit, entity_type):
+    """Search a FAISS vector index."""
+    try:
+        logger.info(f"Searching '{index_name}' for: {query}")
+        
+        # Perform search
+        results = vector_db.search(index_name, query, k=limit)
+        
+        if not results:
+            logger.info("No results found")
+            return
+            
+        logger.info(f"Found {len(results)} results:")
+        
+        from database import get_db
+        
+        with get_db() as db:
+            # Get entity type from index if not specified
+            if not entity_type:
+                index_record = db.query(VectorIndex).filter_by(index_name=index_name).first()
+                if index_record:
+                    entity_type = index_record.entity_type
+                else:
+                    entity_type = 'jobs'  # default
+            
+            # Fetch full records based on IDs
+            for idx, (item_id, distance) in enumerate(results):
+                if entity_type == 'jobs':
+                    record = db.query(JobApplication).filter_by(id=item_id).first()
+                    if record:
+                        logger.info(f"  {idx+1}. [{distance:.4f}] {record.job_title} at {record.company}")
+                elif entity_type == 'skills':
+                    record = db.query(JobSkill).filter_by(id=item_id).first()
+                    if record:
+                        logger.info(f"  {idx+1}. [{distance:.4f}] {record.skill_name} ({record.skill_category})")
+                elif entity_type == 'searches':
+                    record = db.query(SearchHistory).filter_by(id=item_id).first()
+                    if record:
+                        logger.info(f"  {idx+1}. [{distance:.4f}] {record.keywords} in {record.location}")
+                else:
+                    logger.info(f"  {idx+1}. [{distance:.4f}] ID: {item_id}")
+    
+    except Exception as e:
+        logger.error(f"Error searching index: {e}")
+        sys.exit(1)
+
+@vector.command()
+def stats():
+    """Show vector database performance statistics."""
+    try:
+        from database_monitor import DatabaseMonitorService, vector_monitor
+        from database import get_engine
+        
+        monitor_service = DatabaseMonitorService(get_engine())
+        stats = monitor_service.get_vector_db_metrics()
+        
+        if stats["total_operations"] == 0:
+            logger.info("No vector operations recorded yet")
+            return
+        
+        logger.info(f"Vector Database Statistics:")
+        logger.info(f"  Total Operations: {stats['total_operations']}")
+        logger.info(f"  Total Time: {stats['total_time']:.2f}s")
+        logger.info(f"  Average Time per Operation: {stats['avg_time_per_op']:.4f}s")
+        logger.info(f"  Success Rate: {stats['success_rate']:.1f}%")
+        logger.info(f"  Total Vectors Processed: {stats['total_vectors_processed']}")
+        
+        if stats["operations_by_type"]:
+            logger.info("\nOperations by Type:")
+            for op_type, op_stats in stats["operations_by_type"].items():
+                logger.info(f"  {op_type}: {op_stats['count']} ops, "
+                          f"avg {op_stats['avg_time']:.4f}s")
+        
+        if stats["operations_by_index"]:
+            logger.info("\nOperations by Index:")
+            for index, idx_stats in stats["operations_by_index"].items():
+                logger.info(f"  {index}: {idx_stats['count']} ops, "
+                          f"avg {idx_stats['avg_time']:.4f}s")
+        
+        if stats["slow_operations"]:
+            logger.info("\nSlow Operations:")
+            for op in stats["slow_operations"]:
+                logger.info(f"  {op['operation']} on {op['index_name']}: "
+                          f"avg {op['avg_time']:.4f}s ({op['count']} ops)")
+    
+    except Exception as e:
+        logger.error(f"Error getting vector statistics: {e}")
+        sys.exit(1)
+
+@vector.command()
+@click.option('--format', '-f', default='json', type=click.Choice(['json', 'csv']), 
+             help='Output format')
+@click.option('--output', '-o', default='metrics', help='Output directory')
+def export_stats(format, output):
+    """Export vector database statistics to file."""
+    try:
+        from database import get_engine
+        from database_monitor import DatabaseMonitorService
+        
+        monitor_service = DatabaseMonitorService(get_engine())
+        filepath = monitor_service.export_vector_metrics(format=format, output_dir=output)
+        
+        logger.info(f"Vector database statistics exported to: {filepath}")
+    
+    except Exception as e:
+        logger.error(f"Error exporting vector statistics: {e}")
+        sys.exit(1)
+
+@vector.command()
+def clear_stats():
+    """Reset vector database performance statistics."""
+    try:
+        vector_monitor.reset_stats()
+        logger.info("Vector database statistics reset successfully")
+    
+    except Exception as e:
+        logger.error(f"Error resetting vector statistics: {e}")
         sys.exit(1)
 
 if __name__ == '__main__':

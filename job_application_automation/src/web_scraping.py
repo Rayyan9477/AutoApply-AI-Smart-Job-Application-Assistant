@@ -18,12 +18,18 @@ import sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from config.crawl4ai_config import Crawl4AIConfig
 
-# Set up logging
+# Set up logging with absolute path for the log file
+project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+log_file_path = os.path.join(project_root, "data", "web_scraping.log")
+
+# Ensure log directory exists
+os.makedirs(os.path.dirname(log_file_path), exist_ok=True)
+
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler("../data/web_scraping.log"),
+        logging.FileHandler(log_file_path),
         logging.StreamHandler()
     ]
 )

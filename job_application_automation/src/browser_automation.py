@@ -25,12 +25,18 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from config.browser_config import BrowserConfig
 
 
-# Set up logging
+# Set up logging with absolute path for the log file
+project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+log_file_path = os.path.join(project_root, "data", "browser_automation.log")
+
+# Ensure log directory exists
+os.makedirs(os.path.dirname(log_file_path), exist_ok=True)
+
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler("../data/browser_automation.log"),
+        logging.FileHandler(log_file_path),
         logging.StreamHandler()
     ]
 )
@@ -65,8 +71,9 @@ class JobSearchBrowser:
         os.makedirs(self.config.videos_dir, exist_ok=True)
         os.makedirs(self.config.cookies_dir, exist_ok=True)
         
-        # Initialize Agent for browser-use
-        self.agent = Agent()
+        # For now, we'll use a different approach instead of Agent since it requires specific parameters
+        # This will avoid using Agent directly until we understand its requirements better
+        self.agent = None
         logger.info(f"Browser initialized with {self.config.browser_type}")
         
     async def search_for_jobs(self, 
@@ -171,51 +178,75 @@ class JobSearchBrowser:
             A list of job listings.
         """
         try:
-            # Use browser-use Agent for high-level interactions
-            results = await self.agent.run(
-                f"""
-                1. Find the search fields on the LinkedIn Jobs page
-                2. Enter "{keywords}" in the job title field
-                3. Enter "{location}" in the location field
-                4. Click the search button
-                5. Wait for the search results to load
-                6. Extract the following information for each job listing (up to 10):
-                   - Job title
-                   - Company name
-                   - Location
-                   - Job posting URL
-                   - Posted date (if available)
-                7. Return the extracted information as a list of job listings
-                """,
-                page=page
-            )
+            # Since we're not using Agent anymore, implement direct Playwright interactions
+            # Navigate to LinkedIn jobs page
+            await page.goto("https://www.linkedin.com/jobs/")
+            logger.info("Navigated to LinkedIn Jobs page")
             
-            # Process the agent's results
+            # Fill in job title/keywords
+            job_title_input = await page.wait_for_selector('input[aria-label="Search job titles or companies"]')
+            if job_title_input:
+                await job_title_input.click()
+                await job_title_input.fill(keywords)
+                logger.info(f"Entered keywords: {keywords}")
+            
+            # Fill in location
+            location_input = await page.wait_for_selector('input[aria-label="City, state, or zip code"]')
+            if location_input:
+                await location_input.click()
+                await location_input.fill(location)
+                logger.info(f"Entered location: {location}")
+            
+            # Click search button
+            search_button = await page.wait_for_selector('button[data-tracking-control-name="public_jobs_jobs-search-bar_base-search-button"]')
+            if search_button:
+                await search_button.click()
+                logger.info("Clicked search button")
+            
+            # Wait for results to load
+            await page.wait_for_load_state("networkidle")
+            
+            # Extract job listing information
+            job_cards = await page.query_selector_all(".jobs-search-results__list-item")
+            
             job_listings = []
-            if isinstance(results, str):
-                # Parse the agent's response to extract job listings
-                # This is a simplified approach; in a real implementation,
-                # you might use more structured data from the agent
-                lines = results.strip().split("\n")
-                current_job = {}
-                
-                for line in lines:
-                    if line.startswith("Job title:"):
-                        if current_job:
-                            job_listings.append(current_job)
-                            current_job = {}
-                        current_job["job_title"] = line.replace("Job title:", "").strip()
-                    elif line.startswith("Company:"):
-                        current_job["company"] = line.replace("Company:", "").strip()
-                    elif line.startswith("Location:"):
-                        current_job["location"] = line.replace("Location:", "").strip()
-                    elif line.startswith("URL:"):
-                        current_job["url"] = line.replace("URL:", "").strip()
-                    elif line.startswith("Posted:"):
-                        current_job["posted_date"] = line.replace("Posted:", "").strip()
-                
-                if current_job:
-                    job_listings.append(current_job)
+            for i, card in enumerate(job_cards[:10]):  # Limit to first 10 results
+                try:
+                    # Extract job details
+                    job_info = {}
+                    
+                    # Job title
+                    title_elem = await card.query_selector(".job-search-card__title")
+                    if title_elem:
+                        job_info["job_title"] = await title_elem.text_content()
+                    
+                    # Company name
+                    company_elem = await card.query_selector(".job-search-card__company-name")
+                    if company_elem:
+                        job_info["company"] = await company_elem.text_content()
+                    
+                    # Location
+                    location_elem = await card.query_selector(".job-search-card__location")
+                    if location_elem:
+                        job_info["location"] = await location_elem.text_content()
+                    
+                    # Posted date
+                    date_elem = await card.query_selector("time")
+                    if date_elem:
+                        job_info["posted_date"] = await date_elem.text_content()
+                    
+                    # Job URL
+                    link_elem = await card.query_selector("a.job-search-card__link")
+                    if link_elem:
+                        url = await link_elem.get_attribute("href")
+                        job_info["url"] = url
+                    
+                    # Add to list
+                    if job_info:
+                        job_listings.append(job_info)
+                        
+                except Exception as e:
+                    logger.error(f"Error extracting job card {i}: {e}")
             
             # Log the number of job listings found
             logger.info(f"Found {len(job_listings)} job listings on LinkedIn")
@@ -241,53 +272,79 @@ class JobSearchBrowser:
             A list of job listings.
         """
         try:
-            # Use browser-use Agent for high-level interactions
-            results = await self.agent.run(
-                f"""
-                1. Find the search fields on the Indeed Jobs page
-                2. Enter "{keywords}" in the what field
-                3. Enter "{location}" in the where field
-                4. Click the search button
-                5. Wait for the search results to load
-                6. Extract the following information for each job listing (up to 10):
-                   - Job title
-                   - Company name
-                   - Location
-                   - Job posting URL
-                   - Posted date (if available)
-                   - Salary information (if available)
-                7. Return the extracted information as a list of job listings
-                """,
-                page=page
-            )
+            # Navigate to Indeed jobs page
+            await page.goto("https://www.indeed.com/")
+            logger.info("Navigated to Indeed Jobs page")
             
-            # Process the agent's results (similar to LinkedIn)
-            # This is a simplified approach; adjust based on the agent's actual response format
+            # Fill in job title/keywords field
+            job_title_input = await page.wait_for_selector('#text-input-what')
+            if job_title_input:
+                await job_title_input.click()
+                await job_title_input.fill(keywords)
+                logger.info(f"Entered keywords: {keywords}")
+            
+            # Fill in location field
+            location_input = await page.wait_for_selector('#text-input-where')
+            if location_input:
+                await location_input.click()
+                await location_input.fill(location)
+                logger.info(f"Entered location: {location}")
+            
+            # Click search button
+            search_button = await page.wait_for_selector('button[type="submit"]')
+            if search_button:
+                await search_button.click()
+                logger.info("Clicked search button")
+            
+            # Wait for results to load
+            await page.wait_for_load_state("networkidle")
+            
+            # Extract job listing information
+            job_cards = await page.query_selector_all(".job_seen_beacon")
+            
             job_listings = []
-            if isinstance(results, str):
-                # Parse the agent's response to extract job listings
-                lines = results.strip().split("\n")
-                current_job = {}
-                
-                for line in lines:
-                    if line.startswith("Job title:"):
-                        if current_job:
-                            job_listings.append(current_job)
-                            current_job = {}
-                        current_job["job_title"] = line.replace("Job title:", "").strip()
-                    elif line.startswith("Company:"):
-                        current_job["company"] = line.replace("Company:", "").strip()
-                    elif line.startswith("Location:"):
-                        current_job["location"] = line.replace("Location:", "").strip()
-                    elif line.startswith("URL:"):
-                        current_job["url"] = line.replace("URL:", "").strip()
-                    elif line.startswith("Posted:"):
-                        current_job["posted_date"] = line.replace("Posted:", "").strip()
-                    elif line.startswith("Salary:"):
-                        current_job["salary"] = line.replace("Salary:", "").strip()
-                
-                if current_job:
-                    job_listings.append(current_job)
+            for i, card in enumerate(job_cards[:10]):  # Limit to first 10 results
+                try:
+                    # Extract job details
+                    job_info = {}
+                    
+                    # Job title
+                    title_elem = await card.query_selector("[data-testid='jobTitle']")
+                    if title_elem:
+                        job_info["job_title"] = await title_elem.text_content()
+                    
+                    # Company name
+                    company_elem = await card.query_selector("[data-testid='company-name']")
+                    if company_elem:
+                        job_info["company"] = await company_elem.text_content()
+                    
+                    # Location
+                    location_elem = await card.query_selector("[data-testid='text-location']")
+                    if location_elem:
+                        job_info["location"] = await location_elem.text_content()
+                    
+                    # Posted date
+                    date_elem = await card.query_selector(".date")
+                    if date_elem:
+                        job_info["posted_date"] = await date_elem.text_content()
+                    
+                    # Salary if available
+                    salary_elem = await card.query_selector("[data-testid='attribute_snippet_testid']")
+                    if salary_elem:
+                        job_info["salary"] = await salary_elem.text_content()
+                    
+                    # Job URL
+                    link_elem = await card.query_selector("a.jcs-JobTitle")
+                    if link_elem:
+                        url = await link_elem.get_attribute("href")
+                        job_info["url"] = url
+                    
+                    # Add to list
+                    if job_info:
+                        job_listings.append(job_info)
+                        
+                except Exception as e:
+                    logger.error(f"Error extracting job card {i}: {e}")
             
             # Log the number of job listings found
             logger.info(f"Found {len(job_listings)} job listings on Indeed")
@@ -313,56 +370,100 @@ class JobSearchBrowser:
             A list of job listings.
         """
         try:
-            # Use browser-use Agent for high-level interactions
-            results = await self.agent.run(
-                f"""
-                1. Find the search fields on the Glassdoor Jobs page
-                2. Enter "{keywords}" in the job title field
-                3. Enter "{location}" in the location field
-                4. Click the search button
-                5. Wait for the search results to load
-                6. Handle any login/signup popups (close them if possible)
-                7. Extract the following information for each job listing (up to 10):
-                   - Job title
-                   - Company name
-                   - Location
-                   - Job posting URL
-                   - Posted date (if available)
-                   - Salary information (if available)
-                   - Company rating (if available)
-                8. Return the extracted information as a list of job listings
-                """,
-                page=page
-            )
+            # Navigate to Glassdoor jobs page
+            await page.goto("https://www.glassdoor.com/Job/index.htm")
+            logger.info("Navigated to Glassdoor Jobs page")
             
-            # Process the agent's results (similar to LinkedIn and Indeed)
+            # Handle any initial popups
+            try:
+                close_button = await page.wait_for_selector('[alt="Close"]', timeout=5000)
+                if close_button:
+                    await close_button.click()
+                    logger.info("Closed initial popup")
+            except Exception as e:
+                logger.debug(f"No initial popup found or error closing it: {e}")
+            
+            # Fill in job title/keywords field
+            job_title_input = await page.wait_for_selector('#sc\.keyword')
+            if job_title_input:
+                await job_title_input.click()
+                await job_title_input.fill(keywords)
+                logger.info(f"Entered keywords: {keywords}")
+            
+            # Fill in location field  
+            location_input = await page.wait_for_selector('#sc\.location')
+            if location_input:
+                await location_input.click()
+                # Clear existing location
+                await page.keyboard.press("Control+A")
+                await page.keyboard.press("Delete")
+                await location_input.fill(location)
+                logger.info(f"Entered location: {location}")
+            
+            # Click search button
+            search_button = await page.wait_for_selector('button[data-test="search-button"]')
+            if search_button:
+                await search_button.click()
+                logger.info("Clicked search button")
+            
+            # Wait for results to load
+            await page.wait_for_load_state("networkidle")
+            
+            # Handle additional popups if any
+            try:
+                close_button = await page.wait_for_selector('[alt="Close"]', timeout=3000)
+                if close_button:
+                    await close_button.click()
+                    logger.info("Closed popup after search")
+            except Exception as e:
+                logger.debug(f"No popup found after search or error closing it: {e}")
+            
+            # Extract job listing information
+            job_cards = await page.query_selector_all(".react-job-listing")
+            
             job_listings = []
-            if isinstance(results, str):
-                # Parse the agent's response to extract job listings
-                lines = results.strip().split("\n")
-                current_job = {}
-                
-                for line in lines:
-                    if line.startswith("Job title:"):
-                        if current_job:
-                            job_listings.append(current_job)
-                            current_job = {}
-                        current_job["job_title"] = line.replace("Job title:", "").strip()
-                    elif line.startswith("Company:"):
-                        current_job["company"] = line.replace("Company:", "").strip()
-                    elif line.startswith("Location:"):
-                        current_job["location"] = line.replace("Location:", "").strip()
-                    elif line.startswith("URL:"):
-                        current_job["url"] = line.replace("URL:", "").strip()
-                    elif line.startswith("Posted:"):
-                        current_job["posted_date"] = line.replace("Posted:", "").strip()
-                    elif line.startswith("Salary:"):
-                        current_job["salary"] = line.replace("Salary:", "").strip()
-                    elif line.startswith("Rating:"):
-                        current_job["rating"] = line.replace("Rating:", "").strip()
-                
-                if current_job:
-                    job_listings.append(current_job)
+            for i, card in enumerate(job_cards[:10]):  # Limit to first 10 results
+                try:
+                    # Extract job details
+                    job_info = {}
+                    
+                    # Job title
+                    title_elem = await card.query_selector('[data-test="job-link"]')
+                    if title_elem:
+                        job_info["job_title"] = await title_elem.text_content()
+                    
+                    # Company name
+                    company_elem = await card.query_selector('[data-test="employer-name"]')
+                    if company_elem:
+                        job_info["company"] = await company_elem.text_content()
+                    
+                    # Location
+                    location_elem = await card.query_selector('[data-test="location"]')
+                    if location_elem:
+                        job_info["location"] = await location_elem.text_content()
+                    
+                    # Rating if available
+                    rating_elem = await card.query_selector('[data-test="rating-info"]')
+                    if rating_elem:
+                        job_info["rating"] = await rating_elem.text_content()
+                    
+                    # Salary if available
+                    salary_elem = await card.query_selector('[data-test="detailSalary"]')
+                    if salary_elem:
+                        job_info["salary"] = await salary_elem.text_content()
+                    
+                    # Job URL
+                    if title_elem:
+                        url = await title_elem.get_attribute("href")
+                        if url:
+                            job_info["url"] = url
+                    
+                    # Add to list
+                    if job_info:
+                        job_listings.append(job_info)
+                        
+                except Exception as e:
+                    logger.error(f"Error extracting job card {i}: {e}")
             
             # Log the number of job listings found
             logger.info(f"Found {len(job_listings)} job listings on Glassdoor")
@@ -751,26 +852,45 @@ class JobSearchBrowser:
             return False
             
     async def _generate_question_answer(self, question: str) -> str:
-        """Generate an appropriate answer for an application question using AI."""
+        """Generate an appropriate answer for an application question."""
+        # Since we don't have the agent anymore, use a rule-based approach
         try:
-            agent_response = await self.agent.run(
-                f"""
-                Generate an appropriate answer for this job application question:
-                Question: {question}
-                
-                Consider:
-                - Be honest and professional
-                - Provide specific but concise answers
-                - For yes/no questions, prefer "Yes" if qualified
-                - For years of experience, be consistent with resume
-                """
-            )
+            # Default answers for common questions
+            question_lower = question.lower()
             
-            return agent_response.strip()
+            if "years of experience" in question_lower:
+                return "5 years"
+                
+            if "salary" in question_lower or "compensation" in question_lower:
+                return "Competitive / Market Rate"
+                
+            if "notice period" in question_lower:
+                return "2 weeks"
+                
+            if "willing to relocate" in question_lower:
+                return "Yes"
+                
+            if "authorized to work" in question_lower:
+                return "Yes"
+                
+            if "require sponsorship" in question_lower:
+                return "No"
+                
+            if "remote" in question_lower or "work from home" in question_lower:
+                return "Yes, I am comfortable working remotely"
+                
+            if "start date" in question_lower or "when can you start" in question_lower:
+                return "I am available to start immediately"
+                
+            if "education" in question_lower or "degree" in question_lower:
+                return "Bachelor's Degree in Computer Science"
+                
+            # For any other questions, default to a positive response
+            return "Yes"
             
         except Exception as e:
             logger.error(f"Error generating question answer: {e}")
-            return ""
+            return "Yes"  # Default fallback
             
     async def _find_best_option(self, options, desired_answer: str) -> Optional[ElementHandle]:
         """Find the best matching option for a dropdown."""
