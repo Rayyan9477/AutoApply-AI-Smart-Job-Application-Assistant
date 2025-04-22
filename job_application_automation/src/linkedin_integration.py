@@ -139,8 +139,48 @@ class LinkedInIntegration:
                    keywords: Optional[List[str]] = None,
                    location: Optional[str] = None,
                    count: Optional[int] = None) -> List[Dict[str, Any]]:
-        logger.warning("LinkedIn API disabled; search not available.")
-        return []
+        """
+        Search for jobs on LinkedIn using web scraping since direct API is limited.
+        
+        Args:
+            keywords: List of job keywords to search for.
+            location: Location to search for jobs.
+            count: Maximum number of jobs to return.
+            
+        Returns:
+            A list of job listings.
+        """
+        try:
+            # Import the web scraper dynamically to avoid circular imports
+            from src.browser_automation import JobSearchBrowser
+            from config.browser_config import BrowserConfig
+            
+            # Initialize the browser
+            browser = JobSearchBrowser(BrowserConfig())
+            
+            # Convert keywords list to string
+            keywords_str = " ".join(keywords) if keywords else ""
+            
+            # Use browser automation to search for jobs
+            logger.info(f"Searching LinkedIn for jobs: {keywords_str} in {location}")
+            job_listings = await browser.search_for_jobs(
+                keywords=[keywords_str] if keywords_str else None,
+                location=location,
+                job_site="linkedin"
+            )
+            
+            # Limit results if count is specified
+            if count and len(job_listings) > count:
+                job_listings = job_listings[:count]
+            
+            # Save job listings
+            self._save_job_listings(job_listings)
+            
+            return job_listings
+            
+        except Exception as e:
+            logger.error(f"Error searching LinkedIn jobs: {e}")
+            return []
             
     def _parse_linkedin_job(self, job_data: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -202,19 +242,171 @@ class LinkedInIntegration:
             logger.error(f"Error saving LinkedIn job listings: {e}")
             
     async def get_job_description(self, job_id: str) -> Dict[str, Any]:
-        logger.warning("LinkedIn API integration removed; use web_scraping.JobDetailsScraper instead")
-        return {}
+        """
+        Get job description for a specific job ID using web scraping.
+        
+        Args:
+            job_id: LinkedIn job ID.
+            
+        Returns:
+            Dictionary containing job details including description.
+        """
+        try:
+            # Import web scraping module dynamically
+            from src.web_scraping import JobDetailsScraper
+            
+            # Create URL for the job
+            job_url = f"https://www.linkedin.com/jobs/view/{job_id}/"
+            
+            # Initialize scraper
+            scraper = JobDetailsScraper()
+            
+            # Scrape job details
+            logger.info(f"Scraping job details for job ID: {job_id}")
+            job_details = await scraper.scrape_job_details(job_url)
+            
+            if not job_details:
+                logger.error(f"Failed to scrape job details for job ID: {job_id}")
+                return {}
+                
+            # Format return value to match expected structure
+            result = {
+                "job_id": job_id,
+                "title": job_details.get("job_title", "Unknown Position"),
+                "description": job_details.get("description", ""),
+                "company": {
+                    "name": job_details.get("company", "Unknown Company"),
+                    "description": job_details.get("company_description", "")
+                },
+                "location": job_details.get("location", "Unknown Location"),
+                "url": job_url
+            }
+            
+            return result
+            
+        except Exception as e:
+            logger.error(f"Error getting job description for job ID {job_id}: {e}")
+            return {}
             
     async def get_user_profile(self) -> Dict[str, Any]:
-        logger.warning("LinkedIn API integration removed; user profile not available")
-        return {}
+        """
+        Get user profile by loading candidate profile from JSON file.
+        
+        Returns:
+            Dictionary containing user profile data.
+        """
+        try:
+            # Define path to candidate profile JSON
+            profile_path = os.path.join(project_root, "data", "candidate_profile.json")
+            
+            # Check if file exists
+            if not os.path.exists(profile_path):
+                logger.error(f"Candidate profile not found at {profile_path}")
+                return {}
+                
+            # Load profile from file
+            with open(profile_path, "r") as f:
+                profile = json.load(f)
+                
+            logger.info("Successfully loaded candidate profile")
+            
+            # Transform to match expected LinkedIn API format
+            transformed_profile = {
+                "first_name": profile.get("name", "").split()[0] if profile.get("name") else "",
+                "last_name": " ".join(profile.get("name", "").split()[1:]) if profile.get("name") else "",
+                "email": profile.get("email", ""),
+                "headline": profile.get("summary", ""),
+                "phone_numbers": [profile.get("phone", "")] if profile.get("phone") else [],
+                "location": {
+                    "city": profile.get("location", "").split(",")[0].strip() if profile.get("location") else "",
+                    "state": profile.get("location", "").split(",")[1].strip() if profile.get("location") and len(profile.get("location", "").split(",")) > 1 else "",
+                    "country": profile.get("location", "").split(",")[-1].strip() if profile.get("location") else ""
+                },
+                "skills": profile.get("skills", []),
+                "experience": [
+                    {
+                        "title": exp.get("title", ""),
+                        "company": exp.get("company", ""),
+                        "start_date": {"year": exp.get("dates", "").split("-")[0].strip() if exp.get("dates") else ""},
+                        "end_date": {"year": exp.get("dates", "").split("-")[1].strip() if exp.get("dates") and "-" in exp.get("dates", "") else "Present"},
+                        "description": exp.get("description", "")
+                    }
+                    for exp in profile.get("experience", [])
+                ],
+                "education": [
+                    {
+                        "school": edu.get("institution", ""),
+                        "degree": edu.get("degree", ""),
+                        "field_of_study": edu.get("field", ""),
+                        "end_date": {"year": edu.get("year", "")}
+                    }
+                    for edu in profile.get("education", [])
+                ]
+            }
+            
+            return transformed_profile
+            
+        except Exception as e:
+            logger.error(f"Error getting user profile: {e}")
+            return {}
             
     async def apply_to_job(self, 
                      job_id: str,
                      resume_path: Optional[str] = None,
                      cover_letter_path: Optional[str] = None) -> bool:
-        logger.warning("LinkedIn API integration removed; use browser_automation.easy_apply_linkedin instead")
-        return False
+        """
+        Apply to LinkedIn job using browser automation.
+        
+        Args:
+            job_id: LinkedIn job ID.
+            resume_path: Path to resume file.
+            cover_letter_path: Optional path to cover letter file.
+            
+        Returns:
+            True if application was successful, False otherwise.
+        """
+        try:
+            # Check if we can proceed with application (rate limiting)
+            if not self._check_rate_limit_applications():
+                logger.warning("Application rate limit exceeded. Skipping application.")
+                return False
+                
+            # Import the browser automation module dynamically
+            from src.browser_automation import JobSearchBrowser
+            from config.browser_config import BrowserConfig
+            
+            # Create the job URL
+            job_url = f"https://www.linkedin.com/jobs/view/{job_id}/"
+            
+            # Initialize browser
+            browser = JobSearchBrowser(BrowserConfig())
+            
+            # Extract phone number from config
+            phone = self.config.default_phone_number
+            
+            # Log the attempt
+            logger.info(f"Attempting to apply to job: {job_id} with resume: {resume_path}")
+            
+            # Apply to the job
+            success = await browser.apply_to_linkedin_job(
+                job_url=job_url,
+                resume_path=resume_path,
+                cover_letter_path=cover_letter_path,
+                phone=phone
+            )
+            
+            if success:
+                # Update application history
+                self._update_application_history(job_id)
+                logger.info(f"Successfully applied to job: {job_id}")
+            else:
+                logger.warning(f"Failed to apply to job: {job_id}")
+                
+            return success
+            
+        except Exception as e:
+            logger.error(f"Error applying to job {job_id}: {e}")
+            return False
             
     def _check_rate_limit_applications(self) -> bool:
         """

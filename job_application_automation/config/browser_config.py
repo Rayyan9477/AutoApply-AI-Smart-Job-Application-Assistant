@@ -29,9 +29,10 @@ class BrowserConfig(BaseModel):
     # API keys and authentication
     browser_use_api_key: str = os.getenv("BROWSER_USE_API_KEY", "")
     
-    # Default timeout settings
-    default_navigation_timeout: int = 30000  # milliseconds
-    default_timeout: int = 30000  # milliseconds
+    # Default timeout settings - increased to prevent timeouts with slow websites
+    default_navigation_timeout: int = 60000  # milliseconds (60 seconds)
+    default_timeout: int = 60000  # milliseconds (60 seconds)
+    page_load_timeout: int = 90000  # milliseconds (90 seconds)
     
     # User agent settings
     user_agent: str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"

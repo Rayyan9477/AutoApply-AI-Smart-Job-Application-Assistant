@@ -636,15 +636,54 @@ async def run_job_application_process(args):
     
     if not job_listings:
         logger.error("No job listings found")
-        return
+        print("\nNo job listings were found matching your search criteria. Possible solutions:")
+        print("1. Try different keywords or location")
+        print("2. Check your internet connection")
+        print("3. LinkedIn might be rate-limiting access - try again later")
+        print("4. Consider signing in to LinkedIn for better results")
+        
+        # Create a dummy job listing for demonstration purposes if requested
+        if args.demo_mode or args.create_samples:
+            logger.info("Creating sample job listings for demonstration")
+            job_listings = [
+                {
+                    "job_title": "Sample Software Engineer Position",
+                    "company": "Example Tech Company",
+                    "location": args.location,
+                    "job_description": "This is a sample job description for demonstration purposes. " +
+                                      "Requirements: Python, JavaScript, SQL. Experience with cloud platforms preferred.",
+                    "url": "https://www.linkedin.com/jobs/",
+                    "source": "Sample"
+                },
+                {
+                    "job_title": "Sample Data Scientist",
+                    "company": "Demo Analytics Inc.",
+                    "location": args.location,
+                    "job_description": "Sample data scientist position requiring experience with machine learning, " +
+                                      "Python, and data visualization. Must have strong analytical skills.",
+                    "url": "https://www.linkedin.com/jobs/",
+                    "source": "Sample"
+                }
+            ]
+            print("\nCreated sample job listings for demonstration purposes.")
+        else:
+            return
         
     # Scrape job details
     job_details = await automation.scrape_job_details(max_jobs=args.max_jobs)
     
-    if not job_details:
+    if not job_details and not args.demo_mode and not args.create_samples:
         logger.error("No job details found")
+        print("\nCould not retrieve job details. This may happen if:")
+        print("1. The job listings don't have enough information")
+        print("2. There are connection issues with the job posting websites")
+        print("3. The websites have changed their structure")
         return
-        
+    
+    # If in demo mode and no details were scraped, use the sample listings as details
+    if not job_details and (args.demo_mode or args.create_samples):
+        job_details = job_listings
+    
     # Filter jobs
     required_skills = args.required_skills.split(",") if args.required_skills else None
     excluded_keywords = args.excluded_keywords.split(",") if args.excluded_keywords else None
@@ -657,6 +696,10 @@ async def run_job_application_process(args):
     
     if not filtered_jobs:
         logger.error("No jobs passed the filtering criteria")
+        print("\nNo jobs passed the filtering criteria. Consider:")
+        print("1. Lowering the minimum match score")
+        print("2. Adjusting your required skills")
+        print("3. Updating your candidate profile to better match job requirements")
         return
         
     # Generate resumes/cover letters and apply
@@ -669,6 +712,19 @@ async def run_job_application_process(args):
     )
     
     logger.info(f"Job application process completed. Applications submitted: {applications}")
+    
+    if applications > 0:
+        print(f"\nSuccessfully submitted {applications} job applications.")
+    else:
+        print("\nNo applications were submitted. Resume and cover letter files were generated for manual application.")
+    
+    # Print final stats
+    stats = automation.application_tracker.get_application_stats()
+    print(f"\nApplication Summary:")
+    print(f"- Total jobs processed: {stats['total']}")
+    print(f"- Applications submitted: {applications}")
+    print(f"- Pending for manual review: {stats.get('pending', 0)}")
+    print(f"- Failed applications: {stats.get('failed', 0) + stats.get('error', 0)}")
 
 
 def parse_arguments():
@@ -714,6 +770,12 @@ def parse_arguments():
                       help="Minimum ATS score (0-1) required for application")
     parser.add_argument("--auto-optimize-resume", action="store_true",
                       help="Automatically optimize resumes that don't meet ATS threshold")
+    
+    # Debug and demonstration options
+    parser.add_argument("--demo-mode", action="store_true",
+                      help="Run in demonstration mode with sample data when no results are found")
+    parser.add_argument("--create-samples", action="store_true",
+                      help="Create sample job listings if none are found")
     
     return parser.parse_args()
 
