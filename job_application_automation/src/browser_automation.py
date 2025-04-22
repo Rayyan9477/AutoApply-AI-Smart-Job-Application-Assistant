@@ -105,11 +105,19 @@ class JobSearchBrowser:
         search_keywords = " ".join(keywords)
         
         try:
-            # Navigate to the job search website
-            browser = await Browser.create(
-                headless=self.config.headless,
-                slow_mo=self.config.slow_mo
-            )
+            # Import required modules
+            from playwright.async_api import async_playwright
+            
+            # Initialize playwright
+            playwright = await async_playwright().start()
+            
+            # Launch browser based on configured type
+            if self.config.browser_type == "chromium":
+                browser = await playwright.chromium.launch(headless=self.config.headless)
+            elif self.config.browser_type == "firefox":
+                browser = await playwright.firefox.launch(headless=self.config.headless)
+            else:
+                browser = await playwright.chromium.launch(headless=self.config.headless)
             
             # Open a new page
             page = await browser.new_page()
@@ -125,6 +133,7 @@ class JobSearchBrowser:
             
             # Close the browser
             await browser.close()
+            await playwright.stop()
             
             # Save job listings to a file
             self._save_job_listings(job_listings)
@@ -183,31 +192,120 @@ class JobSearchBrowser:
             await page.goto("https://www.linkedin.com/jobs/")
             logger.info("Navigated to LinkedIn Jobs page")
             
-            # Fill in job title/keywords
-            job_title_input = await page.wait_for_selector('input[aria-label="Search job titles or companies"]')
-            if job_title_input:
-                await job_title_input.click()
-                await job_title_input.fill(keywords)
-                logger.info(f"Entered keywords: {keywords}")
+            # More robust selector for job search inputs and reduced timeout
+            try:
+                # First try to find the search inputs with more general selectors
+                # Wait for the page to load
+                await page.wait_for_load_state("domcontentloaded")
+                
+                # Try different selectors for job title/keywords - check both old and new LinkedIn UI
+                job_title_input = None
+                selectors = [
+                    'input[aria-label="Search job titles or companies"]', 
+                    'input[name="keywords"]',
+                    'input[placeholder="Search job titles or companies"]',
+                    'input[class*="jobs-search-box__keyword-input"]'
+                ]
+                
+                for selector in selectors:
+                    try:
+                        job_title_input = await page.wait_for_selector(selector, timeout=5000)
+                        if job_title_input:
+                            break
+                    except Exception:
+                        continue
+                
+                if job_title_input:
+                    await job_title_input.click()
+                    await job_title_input.fill(keywords)
+                    logger.info(f"Entered keywords: {keywords}")
+                else:
+                    logger.warning("Could not find keywords input field")
+                
+                # Try different selectors for location field
+                location_input = None
+                location_selectors = [
+                    'input[aria-label="City, state, or zip code"]',
+                    'input[name="location"]',
+                    'input[placeholder="Location"]',
+                    'input[class*="jobs-search-box__location-input"]'
+                ]
+                
+                for selector in location_selectors:
+                    try:
+                        location_input = await page.wait_for_selector(selector, timeout=5000)
+                        if location_input:
+                            break
+                    except Exception:
+                        continue
+                
+                if location_input:
+                    await location_input.click()
+                    await location_input.fill(location)
+                    logger.info(f"Entered location: {location}")
+                else:
+                    logger.warning("Could not find location input field")
+                
+                # Try different selectors for search button
+                search_button = None
+                button_selectors = [
+                    'button[data-tracking-control-name="public_jobs_jobs-search-bar_base-search-button"]',
+                    'button[type="submit"]',
+                    'button[aria-label="Search"]',
+                    'button.jobs-search-box__submit-button'
+                ]
+                
+                for selector in button_selectors:
+                    try:
+                        search_button = await page.wait_for_selector(selector, timeout=5000)
+                        if search_button:
+                            break
+                    except Exception:
+                        continue
+                
+                if search_button:
+                    await search_button.click()
+                    logger.info("Clicked search button")
+                    # Wait for search results to load
+                    await page.wait_for_load_state("networkidle", timeout=10000)
+                else:
+                    # Try pressing Enter key as fallback
+                    logger.warning("Could not find search button, trying Enter key")
+                    await page.keyboard.press("Enter")
+                    await page.wait_for_load_state("networkidle", timeout=10000)
             
-            # Fill in location
-            location_input = await page.wait_for_selector('input[aria-label="City, state, or zip code"]')
-            if location_input:
-                await location_input.click()
-                await location_input.fill(location)
-                logger.info(f"Entered location: {location}")
+            except Exception as e:
+                logger.error(f"Error interacting with LinkedIn search form: {e}")
+                # As fallback, try to directly navigate to a search URL
+                search_url = f"https://www.linkedin.com/jobs/search/?keywords={keywords.replace(' ', '%20')}&location={location.replace(' ', '%20')}"
+                await page.goto(search_url)
+                logger.info(f"Navigated directly to search URL: {search_url}")
+                await page.wait_for_load_state("networkidle", timeout=10000)
             
-            # Click search button
-            search_button = await page.wait_for_selector('button[data-tracking-control-name="public_jobs_jobs-search-bar_base-search-button"]')
-            if search_button:
-                await search_button.click()
-                logger.info("Clicked search button")
+            # Try different selectors for job cards
+            job_cards = []
+            card_selectors = [
+                ".jobs-search-results__list-item",
+                ".job-search-card",
+                ".jobs-search-results__job-card"
+            ]
             
-            # Wait for results to load
-            await page.wait_for_load_state("networkidle")
+            for selector in card_selectors:
+                try:
+                    cards = await page.query_selector_all(selector)
+                    if cards and len(cards) > 0:
+                        job_cards = cards
+                        break
+                except Exception:
+                    continue
             
-            # Extract job listing information
-            job_cards = await page.query_selector_all(".jobs-search-results__list-item")
+            if not job_cards:
+                logger.warning("No job cards found on the page")
+                # Take a screenshot for debugging
+                screenshot_path = os.path.join(self.config.screenshots_dir, "linkedin_no_results.png")
+                await page.screenshot(path=screenshot_path)
+                logger.info(f"Saved screenshot to {screenshot_path}")
+                return []
             
             job_listings = []
             for i, card in enumerate(job_cards[:10]):  # Limit to first 10 results
@@ -215,34 +313,53 @@ class JobSearchBrowser:
                     # Extract job details
                     job_info = {}
                     
-                    # Job title
-                    title_elem = await card.query_selector(".job-search-card__title")
-                    if title_elem:
-                        job_info["job_title"] = await title_elem.text_content()
+                    # Try multiple selectors for each field
+                    title_selectors = [".job-search-card__title", "[data-test-job-card-title]"]
+                    company_selectors = [".job-search-card__company-name", "[data-test-job-card-company-name]"]
+                    location_selectors = [".job-search-card__location", "[data-test-job-card-location]"]
                     
-                    # Company name
-                    company_elem = await card.query_selector(".job-search-card__company-name")
-                    if company_elem:
-                        job_info["company"] = await company_elem.text_content()
+                    # Extract job title
+                    for selector in title_selectors:
+                        try:
+                            title_elem = await card.query_selector(selector)
+                            if title_elem:
+                                job_info["job_title"] = (await title_elem.text_content() or "").strip()
+                                break
+                        except Exception:
+                            continue
                     
-                    # Location
-                    location_elem = await card.query_selector(".job-search-card__location")
-                    if location_elem:
-                        job_info["location"] = await location_elem.text_content()
+                    # Extract company name
+                    for selector in company_selectors:
+                        try:
+                            company_elem = await card.query_selector(selector)
+                            if company_elem:
+                                job_info["company"] = (await company_elem.text_content() or "").strip()
+                                break
+                        except Exception:
+                            continue
                     
-                    # Posted date
-                    date_elem = await card.query_selector("time")
-                    if date_elem:
-                        job_info["posted_date"] = await date_elem.text_content()
+                    # Extract location
+                    for selector in location_selectors:
+                        try:
+                            location_elem = await card.query_selector(selector)
+                            if location_elem:
+                                job_info["location"] = (await location_elem.text_content() or "").strip()
+                                break
+                        except Exception:
+                            continue
                     
-                    # Job URL
-                    link_elem = await card.query_selector("a.job-search-card__link")
-                    if link_elem:
-                        url = await link_elem.get_attribute("href")
-                        job_info["url"] = url
+                    # Try to get URL using different approaches
+                    try:
+                        link_elem = await card.query_selector("a")
+                        if link_elem:
+                            url = await link_elem.get_attribute("href")
+                            if url:
+                                job_info["url"] = url
+                    except Exception as e:
+                        logger.debug(f"Error extracting job URL: {e}")
                     
-                    # Add to list
-                    if job_info:
+                    # Add to list if we found any useful information
+                    if job_info and ("job_title" in job_info or "company" in job_info):
                         job_listings.append(job_info)
                         
                 except Exception as e:
@@ -254,6 +371,13 @@ class JobSearchBrowser:
             
         except Exception as e:
             logger.error(f"Error searching LinkedIn: {e}")
+            # Take a screenshot for debugging
+            try:
+                screenshot_path = os.path.join(self.config.screenshots_dir, "linkedin_error.png")
+                await page.screenshot(path=screenshot_path)
+                logger.info(f"Saved error screenshot to {screenshot_path}")
+            except Exception:
+                pass
             return []
             
     async def _search_indeed(self, 
@@ -384,14 +508,14 @@ class JobSearchBrowser:
                 logger.debug(f"No initial popup found or error closing it: {e}")
             
             # Fill in job title/keywords field
-            job_title_input = await page.wait_for_selector('#sc\.keyword')
+            job_title_input = await page.wait_for_selector('#sc\\.keyword')
             if job_title_input:
                 await job_title_input.click()
                 await job_title_input.fill(keywords)
                 logger.info(f"Entered keywords: {keywords}")
             
             # Fill in location field  
-            location_input = await page.wait_for_selector('#sc\.location')
+            location_input = await page.wait_for_selector('#sc\\.location')
             if location_input:
                 await location_input.click()
                 # Clear existing location
@@ -481,9 +605,13 @@ class JobSearchBrowser:
             job_listings: List of job listings to save.
         """
         try:
-            with open(self.config.job_sites["job_listings_file"], "w") as f:
+            # Create file path for job listings
+            project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            job_listings_file = os.path.join(project_root, "data", "job_listings.json")
+            
+            with open(job_listings_file, "w") as f:
                 json.dump(job_listings, f, indent=2)
-            logger.info(f"Saved {len(job_listings)} job listings to {self.config.job_sites['job_listings_file']}")
+            logger.info(f"Saved {len(job_listings)} job listings to {job_listings_file}")
         except Exception as e:
             logger.error(f"Error saving job listings: {e}")
 
@@ -502,12 +630,21 @@ class JobSearchBrowser:
     async def easy_apply_linkedin(self, job_id: str, resume_path: str, cover_letter_path: Optional[str] = None) -> bool:
         """Apply to a LinkedIn job using Easy Apply."""
         try:
-            browser = await Browser.create(
-                headless=self.config.headless,
-                slow_mo=self.config.slow_mo,
-                firefox_profile=self.config.firefox_profile_path
-            )
+            # Import required modules
+            from playwright.async_api import async_playwright
             
+            # Initialize playwright
+            playwright = await async_playwright().start()
+            
+            # Launch browser based on configured type
+            if self.config.browser_type == "chromium":
+                browser = await playwright.chromium.launch(headless=self.config.headless)
+            elif self.config.browser_type == "firefox":
+                browser = await playwright.firefox.launch(headless=self.config.headless)
+            else:
+                browser = await playwright.chromium.launch(headless=self.config.headless)
+            
+            # Open a new page
             page = await browser.new_page()
             
             # Navigate to job page
@@ -558,6 +695,8 @@ class JobSearchBrowser:
         finally:
             if browser:
                 await browser.close()
+            if playwright:
+                await playwright.stop()
                 
     async def _upload_resume(self, page: Page, resume_path: str) -> None:
         """Upload resume to application."""
@@ -730,11 +869,21 @@ class JobSearchBrowser:
             True if application was successful, False otherwise
         """
         try:
-            # Create a new browser page
-            browser = await Browser.create(
-                headless=self.config.headless,
-                slow_mo=self.config.slow_mo
-            )
+            # Import required modules
+            from playwright.async_api import async_playwright
+            
+            # Initialize playwright
+            playwright = await async_playwright().start()
+            
+            # Launch browser based on configured type
+            if self.config.browser_type == "chromium":
+                browser = await playwright.chromium.launch(headless=self.config.headless)
+            elif self.config.browser_type == "firefox":
+                browser = await playwright.firefox.launch(headless=self.config.headless)
+            else:
+                browser = await playwright.chromium.launch(headless=self.config.headless)
+            
+            # Open a new page
             page = await browser.new_page()
             
             # Navigate to job posting
@@ -812,7 +961,10 @@ class JobSearchBrowser:
             logger.error(f"Error applying to job: {e}")
             return False
         finally:
-            await browser.close()
+            if browser:
+                await browser.close()
+            if playwright:
+                await playwright.stop()
             
     async def _handle_additional_questions(self, page: Page) -> bool:
         """Handle additional application questions using AI."""
