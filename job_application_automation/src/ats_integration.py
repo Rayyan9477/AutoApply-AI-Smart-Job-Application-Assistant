@@ -4,6 +4,7 @@ This module integrates ATS scoring and optimization with the job application pro
 """
 
 import os
+import json
 import logging
 from typing import Dict, Any, List, Optional, Tuple
 from pathlib import Path
@@ -45,6 +46,8 @@ class ATSIntegrationManager:
         self.app_tracker = ApplicationTracker()
         self.score_history = []
         self.resume_cache = {}  # Cache for resume scores
+        self.state_file = os.path.join(DATA_DIR, "ats_state.json")
+        self.state = {}
         
     def process_job_application(self, 
                              resume_path: str,
@@ -531,27 +534,46 @@ class ATSIntegrationManager:
             return False
     
     def load_state(self) -> bool:
-        """Load state including score history and resume cache."""
+        """
+        Load ATS integration state from file.
+        
+        Returns:
+            True if the state was loaded successfully, False otherwise.
+        """
         try:
-            state_path = DATA_DIR / "ats_state.json"
+            # Create directory if it doesn't exist
+            data_dir = os.path.dirname(self.state_file)
+            os.makedirs(data_dir, exist_ok=True)
             
-            if not state_path.exists():
-                logger.warning(f"ATS state file not found: {state_path}")
-                return False
+            # If state file doesn't exist, create a default state
+            if not os.path.exists(self.state_file):
+                logger.info("ATS state file not found, creating default state file")
+                self.state = {
+                    "processed_jobs": [],
+                    "ats_scores": {},
+                    "resume_performance": {},
+                    "last_updated": datetime.now().isoformat()
+                }
+                # Immediately save the default state
+                self.save_state()
+                return True
                 
-            with open(state_path, 'r', encoding='utf-8') as f:
-                import json
-                state = json.load(f)
-                
-            self.score_history = state.get("score_history", [])
-            self.resume_cache = state.get("resume_cache", {})
+            # Load the state file
+            with open(self.state_file, "r") as f:
+                self.state = json.load(f)
             
-            logger.info(f"Loaded ATS state from {state_path}")
-            logger.info(f"Loaded {len(self.score_history)} historical scores and {len(self.resume_cache)} cached resumes")
+            logger.info("ATS state loaded successfully")
             return True
             
         except Exception as e:
             logger.error(f"Error loading ATS state: {e}")
+            # Initialize empty state
+            self.state = {
+                "processed_jobs": [],
+                "ats_scores": {},
+                "resume_performance": {},
+                "last_updated": datetime.now().isoformat()
+            }
             return False
 
 

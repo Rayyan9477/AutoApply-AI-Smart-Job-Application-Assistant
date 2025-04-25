@@ -19,6 +19,9 @@ import sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from config.linkedin_mcp_config import LinkedInMCPConfig
 
+# Import the compatibility module for LinkedIn MCP
+from src.linkedin_mcp_compat import create_linkedin_mcp, is_linkedin_mcp_available
+
 # Set up logging with absolute path for the log file
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 log_file_path = os.path.join(project_root, "data", "linkedin_integration.log")
@@ -58,14 +61,114 @@ class LinkedInIntegration:
         self.token_expiry = None
         
     def _setup_mcp_server(self) -> None:
-        """Stub out MCP server setup; LinkedIn MCP API disabled."""
-        os.makedirs(self.config.session_storage_path, exist_ok=True)
-        logger.warning("LinkedIn MCP API disabled; mcp_server not available.")
-        self.mcp_server = None
+        """Set up the LinkedIn MCP server connection."""
+        try:
+            os.makedirs(self.config.session_storage_path, exist_ok=True)
+            
+            # Check if API credentials are configured
+            if not self.config.client_id or not self.config.client_secret:
+                logger.info("LinkedIn MCP API credentials not configured - using cookie-based authentication instead")
+                self.mcp_server = None
+                return
+                
+            # Import MCP server only if we actually plan to use it
+            try:
+                # Try to import linkedin_mcp module
+                # This is conditionally imported to avoid errors if the package is not installed
+                import importlib.util
+                if importlib.util.find_spec("linkedin_mcp"):
+                    from linkedin_mcp import LinkedInMCP, MCPConfig
+                    
+                    # Configure MCP server
+                    mcp_config = MCPConfig(
+                        client_id=self.config.client_id,
+                        client_secret=self.config.client_secret,
+                        redirect_uri=self.config.redirect_uri,
+                        session_storage_path=self.config.session_storage_path
+                    )
+                    
+                    # Initialize the MCP server
+                    self.mcp_server = LinkedInMCP(mcp_config)
+                    logger.info("LinkedIn MCP server initialized successfully")
+                else:
+                    logger.warning("LinkedIn MCP package not found - cannot use API features")
+                    self.mcp_server = None
+                
+            except ImportError:
+                logger.warning("LinkedIn MCP package not installed - cannot use API features")
+                self.mcp_server = None
+                
+        except Exception as e:
+            logger.error(f"Error setting up LinkedIn MCP server: {e}")
+            self.mcp_server = None
             
     async def authenticate(self) -> bool:
-        logger.warning("LinkedIn API disabled; authentication not available.")
-        return False
+        """
+        Authenticate with LinkedIn using OAuth 2.0 or saved cookies.
+        
+        Returns:
+            True if authentication was successful, False otherwise.
+        """
+        # First check if we have a valid token
+        if self._is_token_valid():
+            logger.info("Using existing valid LinkedIn token")
+            return True
+            
+        # Then check if we have saved cookies
+        cookies_file = os.path.join(self.config.session_storage_path, "linkedin_cookies.json")
+        if os.path.exists(cookies_file):
+            logger.info("Found saved LinkedIn cookies, attempting to use them")
+            try:
+                # Import required modules
+                from src.browser_automation import JobSearchBrowser
+                from config.browser_config import BrowserConfig
+                
+                # Create custom browser config with headless mode initially disabled
+                browser_config = BrowserConfig()
+                browser_config.headless = False  # Use headful mode for initial login
+                
+                # Initialize browser
+                browser = JobSearchBrowser(browser_config)
+                
+                # Use the browser to test if cookies are valid by visiting LinkedIn
+                authenticated = await browser.test_linkedin_cookies(cookies_file)
+                
+                if authenticated:
+                    logger.info("Successfully authenticated with LinkedIn using saved cookies")
+                    return True
+                else:
+                    logger.warning("Saved cookies are invalid or expired")
+            except Exception as e:
+                logger.error(f"Error authenticating with saved cookies: {e}")
+        
+        # If no cookies or they're invalid, try manual login
+        try:
+            logger.info("No valid authentication found, attempting manual login")
+            
+            # Import required modules for browser automation
+            from src.browser_automation import JobSearchBrowser
+            from config.browser_config import BrowserConfig
+            
+            # Create custom browser config with headless mode disabled for manual login
+            browser_config = BrowserConfig()
+            browser_config.headless = False  # Must use headful mode for manual login
+            
+            # Initialize browser
+            browser = JobSearchBrowser(browser_config)
+            
+            # Launch browser for manual login
+            authenticated = await browser.login_to_linkedin_manual()
+            
+            if authenticated:
+                logger.info("Successfully authenticated with LinkedIn via manual login")
+                return True
+            else:
+                logger.warning("Manual LinkedIn authentication failed")
+                return False
+                
+        except Exception as e:
+            logger.error(f"Error during LinkedIn authentication: {e}")
+            return False
             
     def _is_token_valid(self) -> bool:
         """
@@ -681,7 +784,6 @@ class LinkedInIntegration:
             logger.error(f"Error transforming profile to candidate: {e}")
             
         return candidate
-    
     
     async def full_application_workflow(self, 
                                  keywords: List[str], 

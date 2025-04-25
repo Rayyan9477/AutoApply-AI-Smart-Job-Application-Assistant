@@ -17,7 +17,9 @@ import random
 # Add project root to sys.path before any imports of project modules
 import sys
 import os
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# Define project root path for use throughout the module
+project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, project_root)
 
 # Import project modules
 from browser_automation import JobSearchBrowser
@@ -111,12 +113,34 @@ class JobApplicationAutomation:
             logger.error("Failed to load candidate profile")
             return False
             
+        # Create necessary session directories
+        os.makedirs(os.path.join(project_root, "data", "sessions"), exist_ok=True)
+        
         # Authenticate with LinkedIn if needed
         authenticated = await self.linkedin_integration.authenticate()
         if not authenticated:
             logger.warning("LinkedIn authentication failed, some features may not be available")
-            # Continue anyway, as we can still use web scraping for job search
             
+            # Ask user if they want to attempt manual login
+            if self.interactive_mode:
+                print("\nWould you like to log in to LinkedIn manually? (y/n)")
+                response = input().lower()
+                if response == 'y' or response == 'yes':
+                    # Set browser config to use headful mode
+                    self.browser_config.headless = False
+                    self.browser_config.linkedin_manual_login = True
+                    
+                    # Initialize browser with updated config
+                    self.job_search_browser = JobSearchBrowser(self.browser_config)
+                    
+                    # Try manual login
+                    authenticated = await self.job_search_browser.login_to_linkedin_manual()
+                    if authenticated:
+                        logger.info("Manual LinkedIn login successful")
+                    else:
+                        logger.warning("Manual LinkedIn login failed")
+                        
+        # Continue anyway, as we can still use web scraping for job search
         return True
         
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))

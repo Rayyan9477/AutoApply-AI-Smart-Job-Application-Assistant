@@ -299,88 +299,42 @@ class ResumeGenerator:
         self.api_available = False
         
     def _setup_llm(self) -> None:
-        """Set up the LLM for text generation."""
-        # First check if API mode is enabled
-        if self.config.use_api:
-            try:
-                api_config = self.config.get_api_config()
-                
-                if not api_config or not api_config.get("api_key"):
-                    logger.error("API mode enabled but no API key provided")
-                    self.api_available = False
-                    # Fall back to local model
-                    self._setup_local_model()
-                else:
-                    # Test API connection
-                    test_result = self._test_api_connection(api_config)
-                    if test_result:
-                        logger.info(f"Successfully connected to {self.config.api_provider} API")
-                        self.api_available = True
-                        self.llm_available = True  # API is a form of LLM
-                    else:
-                        logger.error(f"Failed to connect to {self.config.api_provider} API")
-                        self.api_available = False
-                        # Fall back to local model
-                        self._setup_local_model()
-            except Exception as e:
-                logger.error(f"Error setting up API integration: {e}")
-                self.api_available = False
-                # Fall back to local model
-                self._setup_local_model()
-        else:
-            # Use local model
-            self._setup_local_model()
-    
-    def _setup_local_model(self) -> None:
-        """Set up local Llama model."""
+        """Set up the LLM for resume and cover letter generation."""
         try:
-            # First check if the model exists at the configured path
-            if not os.path.exists(self.config.model_path):
-                logger.warning(f"Model file not found at {self.config.model_path}")
-                
-                # Try alternative paths where models might be located
-                alternative_paths = [
-                    os.path.join(project_root, "models", "llama-4-mevrick"),
-                    os.path.join(os.path.dirname(project_root), "models", "llama-4-mevrick"),
-                    os.path.join(os.path.expanduser("~"), "models", "llama-4-mevrick"),
-                    os.path.join(os.path.dirname(project_root), "llama-4-mevrick")
-                ]
-                
-                found_model = False
-                for alt_path in alternative_paths:
-                    if os.path.exists(alt_path):
-                        logger.info(f"Found model at alternative path: {alt_path}")
-                        self.config.model_path = alt_path
-                        found_model = True
-                        break
-                
-                # Model not found, set up template-based fallback
-                if not found_model:
-                    self.llm = None
-                    self.llm_available = False
-                    # Create directory for models if it doesn't exist
-                    os.makedirs(os.path.dirname(self.config.model_path), exist_ok=True)
-                    logger.warning(f"No model found. Using template-based generation instead.")
-                    return
+            # Create models directory if it doesn't exist 
+            models_dir = os.path.join(project_root, "models")
+            os.makedirs(models_dir, exist_ok=True)
+
+            # Create data directories if they don't exist
+            output_dir = os.path.join(project_root, "data", "generated_cover_letters")
+            os.makedirs(output_dir, exist_ok=True)
             
-            # Try to initialize the LLM with correct parameters
+            # Check if model file exists
+            model_path = os.path.join(project_root, "models", "llama-4-mevrick")
+            if not os.path.exists(model_path):
+                logger.info("Model file not found at %s - will use template-based generation instead", model_path)
+                self.llm_available = False
+                return
+                
             try:
-                self.llm = Llama(
-                    model_path=self.config.model_path,
-                    n_ctx=self.config.context_length,
-                    n_gpu_layers=self.config.gpu_layers,
-                    use_mlock=self.config.use_gpu
+                # Try to load the model
+                import llama_cpp
+                
+                self.llm = llama_cpp.Llama(
+                    model_path=model_path,
+                    n_ctx=4096,
+                    n_threads=self.config.n_threads,
+                    n_gpu_layers=self.config.n_gpu_layers
                 )
-                logger.info(f"LLM initialized with {self.config.model_path}")
                 self.llm_available = True
-            except Exception as llm_error:
-                logger.error(f"Failed to initialize LLM: {llm_error}")
-                self.llm = None
+                logger.info("LLM initialized successfully")
+                
+            except ImportError:
+                logger.warning("llama_cpp package not installed - falling back to template-based generation")
                 self.llm_available = False
                 
         except Exception as e:
-            logger.error(f"Error initializing LLM: {e}")
-            self.llm = None
+            logger.warning("Error setting up LLM: %s - will use template-based generation instead", e)
             self.llm_available = False
     
     def _test_api_connection(self, api_config: Dict[str, Any]) -> bool:
