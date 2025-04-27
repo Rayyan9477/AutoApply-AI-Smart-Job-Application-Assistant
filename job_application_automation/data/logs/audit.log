@@ -1,0 +1,56 @@
+{"asctime": "2025-04-27 22:05:58", "name": "numexpr.utils", "levelname": "INFO", "message": "NumExpr defaulting to 4 threads.", "taskName": null}
+{"asctime": "2025-04-27 22:06:11", "name": "browser_automation", "levelname": "INFO", "message": "Browser initialized with chromium", "taskName": "Task-1"}
+{"asctime": "2025-04-27 22:06:11", "name": "linkedin_integration", "levelname": "INFO", "message": "LinkedIn MCP API credentials not configured - using cookie-based authentication instead", "taskName": "Task-1"}
+{"asctime": "2025-04-27 22:06:11", "name": "resume_cover_letter_generator", "levelname": "WARNING", "message": "Model file not found - will use template-based generation instead", "taskName": "Task-1"}
+{"asctime": "2025-04-27 22:06:11", "name": "src.resume_optimizer", "levelname": "INFO", "message": "Loading sentence transformer model...", "taskName": "Task-1"}
+{"asctime": "2025-04-27 22:06:11", "name": "sentence_transformers.SentenceTransformer", "levelname": "INFO", "message": "Use pytorch device_name: cpu", "taskName": "Task-1"}
+{"asctime": "2025-04-27 22:06:11", "name": "sentence_transformers.SentenceTransformer", "levelname": "INFO", "message": "Load pretrained SentenceTransformer: all-MiniLM-L6-v2", "taskName": "Task-1"}
+{"asctime": "2025-04-27 22:06:13", "name": "src.resume_optimizer", "levelname": "WARNING", "message": "Failed to load sentence transformer model: sentence-transformers/all-MiniLM-L6-v2 is not a local folder and is not a valid model identifier listed on 'https://huggingface.co/models'\nIf this is a private repository, make sure to pass a token having permission to this repo either by logging in with `huggingface-cli login` or by passing `token=<your_token>`. Using fallback embedding method.", "taskName": "Task-1"}
+{"asctime": "2025-04-27 22:06:13", "name": "src.resume_optimizer", "levelname": "WARNING", "message": "No local model found. Using fallback text comparison.", "taskName": "Task-1"}
+{"asctime": "2025-04-27 22:06:13", "name": "src.resume_optimizer", "levelname": "INFO", "message": "FAISS vector index initialized for ATS scoring", "taskName": "Task-1"}
+{"asctime": "2025-04-27 22:06:13", "name": "src.resume_optimizer", "levelname": "INFO", "message": "Loading sentence transformer model...", "taskName": "Task-1"}
+{"asctime": "2025-04-27 22:06:13", "name": "sentence_transformers.SentenceTransformer", "levelname": "INFO", "message": "Use pytorch device_name: cpu", "taskName": "Task-1"}
+{"asctime": "2025-04-27 22:06:13", "name": "sentence_transformers.SentenceTransformer", "levelname": "INFO", "message": "Load pretrained SentenceTransformer: all-MiniLM-L6-v2", "taskName": "Task-1"}
+{"asctime": "2025-04-27 22:06:15", "name": "src.resume_optimizer", "levelname": "WARNING", "message": "Failed to load sentence transformer model: sentence-transformers/all-MiniLM-L6-v2 is not a local folder and is not a valid model identifier listed on 'https://huggingface.co/models'\nIf this is a private repository, make sure to pass a token having permission to this repo either by logging in with `huggingface-cli login` or by passing `token=<your_token>`. Using fallback embedding method.", "taskName": "Task-1"}
+{"asctime": "2025-04-27 22:06:15", "name": "src.resume_optimizer", "levelname": "WARNING", "message": "No local model found. Using fallback text comparison.", "taskName": "Task-1"}
+{"asctime": "2025-04-27 22:06:15", "name": "src.resume_optimizer", "levelname": "INFO", "message": "FAISS vector index initialized for ATS scoring", "taskName": "Task-1"}
+{"asctime": "2025-04-27 22:06:15", "name": "src.resume_cover_letter_generator", "levelname": "WARNING", "message": "Model file not found - will use template-based generation instead", "taskName": "Task-1"}
+{"asctime": "2025-04-27 22:06:15", "name": "ats_integration", "levelname": "INFO", "message": "ATS state loaded successfully", "taskName": "Task-1"}
+{"asctime": "2025-04-27 22:06:15", "name": "__main__", "levelname": "INFO", "message": "Job Application Automation initialized", "taskName": "Task-1"}
+{"asctime": "2025-04-27 22:06:15", "name": "__main__", "levelname": "INFO", "message": "Loaded candidate profile from file", "taskName": "Task-1"}
+{"asctime": "2025-04-27 22:06:15", "name": "linkedin_integration", "levelname": "INFO", "message": "Found saved LinkedIn cookies, attempting to use them", "taskName": "Task-1"}
+{"asctime": "2025-04-27 22:06:15", "name": "src.browser_automation", "levelname": "INFO", "message": "Browser initialized with chromium", "taskName": "Task-1"}
+{"asctime": "2025-04-27 22:06:36", "name": "src.browser_automation", "levelname": "INFO", "message": "Loaded cookies from C:\\Users\\rayyan\\Downloads\\VS Code Workspace\\linkedin\\job_application_automation\\data\\sessions\\linkedin_cookies.json", "taskName": "Task-1"}
+{"asctime": "2025-04-27 22:06:44", "name": "src.browser_automation", "levelname": "INFO", "message": "Successfully authenticated using LinkedIn cookies", "taskName": "Task-1"}
+{"asctime": "2025-04-27 22:06:48", "name": "linkedin_integration", "levelname": "INFO", "message": "Successfully authenticated with LinkedIn using saved cookies", "taskName": "Task-1"}
+{"asctime": "2025-04-27 22:06:48", "name": "__main__", "levelname": "INFO", "message": "Searching for jobs on LinkedIn with keywords ['software engineer', 'python'] in Remote", "taskName": "Task-1"}
+{"asctime": "2025-04-27 22:06:48", "name": "src.browser_automation", "levelname": "INFO", "message": "Browser initialized with chromium", "taskName": "Task-1"}
+{"asctime": "2025-04-27 22:06:48", "name": "linkedin_integration", "levelname": "INFO", "message": "Searching LinkedIn for jobs: software engineer python in Remote (attempt 1)", "taskName": "Task-1"}
+{"asctime": "2025-04-27 22:06:59", "name": "src.browser_automation", "levelname": "INFO", "message": "Navigated to https://www.linkedin.com/jobs/", "taskName": "Task-1"}
+{"asctime": "2025-04-27 22:06:59", "name": "src.browser_automation", "levelname": "ERROR", "message": "Error searching LinkedIn: object NoneType can't be used in 'await' expression", "taskName": "Task-1"}
+{"asctime": "2025-04-27 22:07:00", "name": "src.browser_automation", "levelname": "INFO", "message": "Saved error screenshot to ../data/screenshots\\linkedin_error.png", "taskName": "Task-1"}
+{"asctime": "2025-04-27 22:07:00", "name": "src.browser_automation", "levelname": "INFO", "message": "Saved 0 job listings to C:\\Users\\rayyan\\Downloads\\VS Code Workspace\\linkedin\\job_application_automation\\data\\job_listings.json", "taskName": "Task-1"}
+{"asctime": "2025-04-27 22:07:00", "name": "linkedin_integration", "levelname": "WARNING", "message": "No results found on attempt 1. Retrying...", "taskName": "Task-1"}
+{"asctime": "2025-04-27 22:07:02", "name": "linkedin_integration", "levelname": "INFO", "message": "Searching LinkedIn for jobs: software engineer python in None (attempt 2)", "taskName": "Task-1"}
+{"asctime": "2025-04-27 22:07:04", "name": "src.browser_automation", "levelname": "INFO", "message": "Navigated to https://www.linkedin.com/jobs/", "taskName": "Task-1"}
+{"asctime": "2025-04-27 22:07:04", "name": "src.browser_automation", "levelname": "ERROR", "message": "Error searching LinkedIn: object NoneType can't be used in 'await' expression", "taskName": "Task-1"}
+{"asctime": "2025-04-27 22:07:05", "name": "src.browser_automation", "levelname": "INFO", "message": "Saved error screenshot to ../data/screenshots\\linkedin_error.png", "taskName": "Task-1"}
+{"asctime": "2025-04-27 22:07:05", "name": "src.browser_automation", "levelname": "INFO", "message": "Saved 0 job listings to C:\\Users\\rayyan\\Downloads\\VS Code Workspace\\linkedin\\job_application_automation\\data\\job_listings.json", "taskName": "Task-1"}
+{"asctime": "2025-04-27 22:07:05", "name": "linkedin_integration", "levelname": "WARNING", "message": "No results found on attempt 2. Retrying...", "taskName": "Task-1"}
+{"asctime": "2025-04-27 22:07:09", "name": "linkedin_integration", "levelname": "INFO", "message": "Searching LinkedIn for jobs: software engineer in None (attempt 3)", "taskName": "Task-1"}
+{"asctime": "2025-04-27 22:07:11", "name": "src.browser_automation", "levelname": "INFO", "message": "Navigated to https://www.linkedin.com/jobs/", "taskName": "Task-1"}
+{"asctime": "2025-04-27 22:07:11", "name": "src.browser_automation", "levelname": "ERROR", "message": "Error searching LinkedIn: object NoneType can't be used in 'await' expression", "taskName": "Task-1"}
+{"asctime": "2025-04-27 22:07:12", "name": "src.browser_automation", "levelname": "INFO", "message": "Saved error screenshot to ../data/screenshots\\linkedin_error.png", "taskName": "Task-1"}
+{"asctime": "2025-04-27 22:07:12", "name": "src.browser_automation", "levelname": "INFO", "message": "Saved 0 job listings to C:\\Users\\rayyan\\Downloads\\VS Code Workspace\\linkedin\\job_application_automation\\data\\job_listings.json", "taskName": "Task-1"}
+{"asctime": "2025-04-27 22:07:12", "name": "linkedin_integration", "levelname": "WARNING", "message": "No results found on attempt 3. Retrying...", "taskName": "Task-1"}
+{"asctime": "2025-04-27 22:07:20", "name": "linkedin_integration", "levelname": "INFO", "message": "Saved 0 LinkedIn job listings to ../data/linkedin_job_listings.json", "taskName": "Task-1"}
+{"asctime": "2025-04-27 22:07:20", "name": "linkedin_integration", "levelname": "INFO", "message": "Found 0 jobs on LinkedIn", "taskName": "Task-1"}
+{"asctime": "2025-04-27 22:07:20", "name": "__main__", "levelname": "INFO", "message": "Found 0 jobs on LinkedIn", "taskName": "Task-1"}
+{"asctime": "2025-04-27 22:07:20", "name": "__main__", "levelname": "INFO", "message": "Searching for jobs on linkedin with keywords ['software engineer', 'python'] in Remote", "taskName": "Task-1"}
+{"asctime": "2025-04-27 22:07:22", "name": "browser_automation", "levelname": "INFO", "message": "Navigated to https://www.linkedin.com/jobs/", "taskName": "Task-1"}
+{"asctime": "2025-04-27 22:07:22", "name": "browser_automation", "levelname": "ERROR", "message": "Error searching LinkedIn: object NoneType can't be used in 'await' expression", "taskName": "Task-1"}
+{"asctime": "2025-04-27 22:07:23", "name": "browser_automation", "levelname": "INFO", "message": "Saved error screenshot to ../data/screenshots\\linkedin_error.png", "taskName": "Task-1"}
+{"asctime": "2025-04-27 22:07:23", "name": "browser_automation", "levelname": "INFO", "message": "Saved 0 job listings to C:\\Users\\rayyan\\Downloads\\VS Code Workspace\\linkedin\\job_application_automation\\data\\job_listings.json", "taskName": "Task-1"}
+{"asctime": "2025-04-27 22:07:23", "name": "__main__", "levelname": "INFO", "message": "Found 0 jobs through browser automation", "taskName": "Task-1"}
+{"asctime": "2025-04-27 22:07:23", "name": "__main__", "levelname": "INFO", "message": "Saved 0 combined job listings", "taskName": "Task-1"}
+{"asctime": "2025-04-27 22:07:23", "name": "__main__", "levelname": "ERROR", "message": "No job listings found", "taskName": "Task-1"}

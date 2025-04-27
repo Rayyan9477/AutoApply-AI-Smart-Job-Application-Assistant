@@ -5,6 +5,7 @@ import os
 import sys
 import click
 import logging
+import asyncio
 from pathlib import Path
 from datetime import datetime
 from alembic import command

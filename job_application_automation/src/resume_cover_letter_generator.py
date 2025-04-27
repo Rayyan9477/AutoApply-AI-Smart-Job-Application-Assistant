@@ -21,7 +21,7 @@ from docx import Document
 from docx.shared import Pt, Inches
 
 # AI/LLM integration
-from llama_cpp import Llama  # type: ignore
+# from llama_cpp import Llama  # type: ignore
 
 # Import configuration
 import sys
@@ -309,32 +309,71 @@ class ResumeGenerator:
             output_dir = os.path.join(project_root, "data", "generated_cover_letters")
             os.makedirs(output_dir, exist_ok=True)
             
+            # First check if API is available
+            if self.config.use_api:
+                api_config = self.config.get_api_config()
+                if api_config:
+                    self.api_available = self._test_api_connection(api_config)
+                    if self.api_available:
+                        logger.info(f"Successfully connected to {self.config.api_provider} API")
+                        self.llm_available = False  # Use API instead of local model
+                        return
+                    else:
+                        logger.warning(f"Failed to connect to {self.config.api_provider} API, falling back to local model")
+                
             # Check if model file exists
-            model_path = os.path.join(project_root, "models", "llama-4-mevrick")
-            if not os.path.exists(model_path):
-                logger.info("Model file not found at %s - will use template-based generation instead", model_path)
+            model_paths = [
+                os.path.join(project_root, "models", "llama-4-mevrick"),
+                os.path.join(project_root, "models", "llama-4-mevrick.gguf"),
+                os.path.join(project_root, "models", "llama-3-8b.gguf"),
+                os.path.join(project_root, "models", "llama-2-7b.gguf"),
+                os.path.join(os.path.expanduser("~"), ".cache", "models", "llama-4-mevrick.gguf"),
+                os.path.join(os.path.expanduser("~"), ".cache", "models", "llama-3-8b.gguf")
+            ]
+            
+            model_path = None
+            for path in model_paths:
+                if os.path.exists(path):
+                    model_path = path
+                    logger.info(f"Found model file at {model_path}")
+                    break
+                    
+            if not model_path:
+                logger.warning("Model file not found - will use template-based generation instead")
                 self.llm_available = False
                 return
                 
             try:
+                # Try to import the llama_cpp module
+                try:
+                    import llama_cpp
+                    logger.info("Successfully imported llama_cpp module")
+                except ImportError as imp_err:
+                    logger.warning(f"Failed to import llama_cpp: {imp_err} - using template-based generation")
+                    self.llm_available = False
+                    return
+                    
                 # Try to load the model
-                import llama_cpp
-                
+                logger.info(f"Loading model from {model_path} with {self.config.n_threads} threads and {self.config.n_gpu_layers} GPU layers")
                 self.llm = llama_cpp.Llama(
                     model_path=model_path,
-                    n_ctx=4096,
+                    n_ctx=self.config.context_length,
                     n_threads=self.config.n_threads,
                     n_gpu_layers=self.config.n_gpu_layers
                 )
                 self.llm_available = True
                 logger.info("LLM initialized successfully")
                 
-            except ImportError:
-                logger.warning("llama_cpp package not installed - falling back to template-based generation")
+            except ImportError as e:
+                logger.warning(f"llama_cpp package not installed: {e} - falling back to template-based generation")
+                self.llm_available = False
+                
+            except Exception as e:
+                logger.warning(f"Error loading model: {e} - falling back to template-based generation")
                 self.llm_available = False
                 
         except Exception as e:
-            logger.warning("Error setting up LLM: %s - will use template-based generation instead", e)
+            logger.warning(f"Error setting up LLM: {e} - will use template-based generation instead")
             self.llm_available = False
     
     def _test_api_connection(self, api_config: Dict[str, Any]) -> bool:
@@ -699,31 +738,88 @@ class ResumeGenerator:
             Score from 0.0 to 1.0 where 1.0 is a perfect match.
             """
             
+            # Format the prompt
             formatted_prompt = scoring_prompt.format(
-                requirements="\n".join(job_requirements),
-                skills="\n".join(candidate_skills)
+                requirements="\n".join(f"- {req}" for req in job_requirements),
+                skills="\n".join(f"- {skill}" for skill in candidate_skills)
             )
             
-            response = self._generate_text(
-                prompt=formatted_prompt,
-                system_prompt="You are an expert skills matcher."
-            )
+            # If we have AI available, use it
+            if self.llm_available or self.api_available:
+                response = self.generate_text(formatted_prompt)
+                
+                # Parse response
+                scored_skills = []
+                for line in response.split("\n"):
+                    if "|" in line:
+                        parts = line.split("|")
+                        if len(parts) == 2:
+                            skill = parts[0].strip()
+                            try:
+                                score = float(parts[1].strip())
+                                score = max(0.0, min(1.0, score))  # Clamp to 0.0-1.0
+                                scored_skills.append((skill, score))
+                            except ValueError:
+                                # Skip malformed lines
+                                continue
+                
+                # If we got results, return them
+                if scored_skills:
+                    return sorted(scored_skills, key=lambda x: x[1], reverse=True)
             
-            # Parse scores and sort
+            # Fallback: simple text matching algorithm
             scored_skills = []
-            for line in response.split("\n"):
-                if "|" in line:
-                    skill, score = line.split("|")
-                    try:
-                        scored_skills.append((skill.strip(), float(score.strip())))
-                    except ValueError:
-                        continue
+            for skill in candidate_skills:
+                skill_lower = skill.lower()
+                
+                # Calculate best match score against requirements
+                best_score = 0.0
+                for req in job_requirements:
+                    req_lower = req.lower()
+                    
+                    # Direct match
+                    if skill_lower == req_lower or skill_lower in req_lower:
+                        score = 1.0
+                    # Partial match (skill words in requirement)
+                    elif any(word in req_lower for word in skill_lower.split()):
+                        score = 0.7
+                    # Related field match
+                    elif self._are_related_tech(skill_lower, req_lower):
+                        score = 0.5
+                    # No match
+                    else:
+                        score = 0.1
                         
+                    best_score = max(best_score, score)
+                
+                scored_skills.append((skill, best_score))
+                
             return sorted(scored_skills, key=lambda x: x[1], reverse=True)
             
         except Exception as e:
             logger.error(f"Error scoring skills match: {e}")
+            # Return unsorted skills with default score
             return [(skill, 0.5) for skill in candidate_skills]
+            
+    def _are_related_tech(self, skill: str, requirement: str) -> bool:
+        """Check if a skill and requirement are related in the tech domain."""
+        # Define related technology groups
+        tech_groups = [
+            {"python", "django", "flask", "fastapi", "tornado", "pyramid", "web2py", "bottle", "scipy", "numpy", "pandas"},
+            {"javascript", "typescript", "node", "vue", "react", "angular", "express", "next.js", "nuxt", "svelte"},
+            {"java", "spring", "hibernate", "jpa", "jakarta", "j2ee", "servlet", "struts", "vaadin"},
+            {"cloud", "aws", "azure", "gcp", "google cloud", "serverless", "kubernetes", "docker", "containers"},
+            {"data", "sql", "mysql", "postgresql", "mongodb", "nosql", "database", "analytics", "warehouse", "big data"},
+            {"devops", "ci/cd", "jenkins", "github actions", "gitlab ci", "terraform", "ansible", "puppet", "chef"},
+            {"machine learning", "ml", "ai", "deep learning", "tensorflow", "pytorch", "keras", "scikit-learn"}
+        ]
+        
+        # Check if skill and requirement are in the same group
+        for group in tech_groups:
+            if any(term in skill for term in group) and any(term in requirement for term in group):
+                return True
+                
+        return False
             
     def _prepare_cover_letter_prompt(self,
                               job_description: str,
@@ -734,298 +830,214 @@ class ResumeGenerator:
         """
         Prepare the prompt for cover letter generation with enhanced AI analysis.
         """
-        # Use the template prompt from config
-        prompt = self.config.cover_letter_template_prompt.format(
-            job_description=job_description,
-            candidate_resume=candidate_resume,
-            company_info=company_info
-        )
+        # Get the template prompt for the specified type
+        template_prompt = self.template_manager.get_template_prompt(template_type)
         
-        return prompt
+        # Format the template prompt with our data
+        prompt_data = {
+            "job_description": job_description,
+            "candidate_resume": candidate_resume,
+            "company_info": company_info
+        }
         
+        # Add referral info if provided
+        if referral_info:
+            prompt_data["referral_info"] = referral_info
+        
+        # Format the prompt
+        try:
+            formatted_prompt = template_prompt.format(**prompt_data)
+        except KeyError as e:
+            # Handle case where template needs a field we don't have
+            logger.warning(f"Template missing required field: {e}")
+            # Fall back to standard template
+            standard_template = self.template_manager.get_template_prompt(CoverLetterTemplate.STANDARD)
+            formatted_prompt = standard_template.format(**prompt_data)
+            
+        # Add system instruction for high quality cover letter
+        system_instruction = "Create a professional, tailored cover letter that matches the candidate's qualifications to the job requirements. Use a confident tone, avoid clichés, and focus on specific achievements relevant to the role."
+        
+        # Combine system instruction and prompt
+        final_prompt = f"{system_instruction}\n\n{formatted_prompt}"
+        
+        return final_prompt
+            
     def _generate_text(self, 
                 prompt: str, 
                 system_prompt: Optional[str] = None, 
                 **kwargs) -> str:
         """
-        Generate text using the LLM.
+        Generate text using available generation method (API or local LLM).
         
         Args:
-            prompt: The prompt text.
-            system_prompt: Optional system prompt for LLM.
-            **kwargs: Additional parameters for text generation.
+            prompt: The prompt to generate text from.
+            system_prompt: Optional system prompt for guidance.
+            **kwargs: Additional parameters for the text generation.
             
         Returns:
-            Generated text string.
+            Generated text as a string.
         """
-        if not self.llm:
-            logger.error("LLM not initialized")
-            return ""
-            
         try:
-            # Prepare parameters
-            params = {
-                "temperature": self.config.temperature,
-                "top_p": self.config.top_p,
-                "max_tokens": self.config.context_length // 2
-            }
-            params.update(kwargs)
-            # Combine system + user prompt if provided
-            full_prompt = f"{system_prompt}\n{prompt}" if system_prompt else prompt
-            # Call LLM
-            response = self.llm(full_prompt, **params)
-            # Extract text
-            text = ""
-            if hasattr(response, 'choices'):
-                text = response.choices[0].text
-            elif isinstance(response, dict) and 'choices' in response:
-                text = response['choices'][0]['text']
-            return text.strip()
+            # Combine prompts if system prompt is provided
+            combined_prompt = prompt
+            if system_prompt:
+                combined_prompt = f"{system_prompt}\n\n{prompt}"
+                
+            # Choose generation method
+            if self.config.use_api and self.api_available:
+                return self._generate_text_with_api(combined_prompt)
+            elif self.llm_available:
+                return self._generate_text_with_llm(combined_prompt)
+            else:
+                return self._template_based_fallback(combined_prompt)
+                
         except Exception as e:
-            logger.error(f"Error generating text with LLM: {e}")
-            return ""
+            logger.error(f"Error in _generate_text: {e}")
+            return self._template_based_fallback(prompt)
             
     def _create_resume_document(self, content: str, output_path: str) -> str:
         """
-        Create a resume document from the generated content.
+        Create a properly formatted resume document from generated content.
         
         Args:
-            content: The generated resume content.
-            output_path: Path to save the document.
+            content: The resume content text.
+            output_path: Path to save the document to.
             
         Returns:
             Path to the created document.
         """
         try:
-            # Check if there's a template available
-            template_path = "../templates/resume_template.docx"
+            # Create a new document or use template
+            template_path = os.path.join(project_root, "templates", "resume_template.docx")
+            
+            # If template exists, use it
             if os.path.exists(template_path):
-                # Use the template
-                return self._create_document_from_template(content, template_path, output_path)
-            else:
-                # Create a document from scratch
-                return self._create_document(content, output_path)
+                doc = DocxTemplate(template_path)
                 
+                # Extract sections from content
+                context = self._parse_resume_sections(content)
+                
+                # Render template with context
+                doc.render(context)
+                doc.save(output_path)
+            else:
+                # No template, create a simple document
+                doc = Document()
+                
+                # Add title
+                title = doc.add_heading("Resume", 0)
+                
+                # Add content by paragraphs
+                for paragraph in content.split("\n\n"):
+                    if paragraph.strip():
+                        if paragraph.strip().endswith(":"):
+                            # This is likely a section header
+                            doc.add_heading(paragraph.strip(), level=1)
+                        else:
+                            p = doc.add_paragraph(paragraph.strip())
+                
+                # Save document
+                doc.save(output_path)
+                
+            logger.info(f"Created resume document at {output_path}")
+            return output_path
+            
         except Exception as e:
             logger.error(f"Error creating resume document: {e}")
-            return ""
             
-    def _create_cover_letter_document(self, content: str, output_path: str, template_path: Optional[Path] = None) -> str:
-        """
-        Create a cover letter document from the generated content.
-        
-        Args:
-            content: The generated cover letter content.
-            output_path: Path to save the document.
-            template_path: Optional specific template path to use.
+            # Fallback - save as plain text
+            text_path = output_path.replace(".docx", ".txt")
+            with open(text_path, "w", encoding="utf-8") as f:
+                f.write(content)
             
-        Returns:
-            Path to the created document.
-        """
-        try:
-            # Use provided template path or default
-            template_path_str = str(template_path) if template_path else "../templates/cover_letter_template.docx"
+            logger.info(f"Saved resume as plain text at {text_path}")
+            return text_path
             
-            if os.path.exists(template_path_str):
-                # Use the template
-                return self._create_document_from_template(content, template_path_str, output_path)
-            else:
-                # Create a document from scratch
-                return self._create_document(content, output_path)
-                
-        except Exception as e:
-            logger.error(f"Error creating cover letter document: {e}")
-            return ""
-            
-    def _create_document_from_template(self, content: str, template_path: str, output_path: str) -> str:
-        """
-        Create a document using a template.
-        
-        Args:
-            content: The document content.
-            template_path: Path to the template file.
-            output_path: Path to save the document.
-            
-        Returns:
-            Path to the created document.
-        """
-        try:
-            # Use DocxTemplate for template-based document creation
-            doc = DocxTemplate(template_path)
-            
-            # Parse the content into sections
-            sections = self._parse_content_to_sections(content)
-            
-            # Add current date to the context
-            sections['current_date'] = datetime.now().strftime("%B %d, %Y")
-            
-            # Render the template with the content
-            doc.render(sections)
-            
-            # Ensure the output directory exists
-            os.makedirs(os.path.dirname(output_path), exist_ok=True)
-            
-            # Save the document
-            doc.save(output_path)
-            
-            return output_path
-            
-        except Exception as e:
-            logger.error(f"Error creating document from template: {e}")
-            return ""
-            
-    def _create_document(self, content: str, output_path: str) -> str:
-        """
-        Create a document from scratch.
-        
-        Args:
-            content: The document content.
-            output_path: Path to save the document.
-            
-        Returns:
-            Path to the created document.
-        """
-        try:
-            # Create a new document
-            doc = Document()
-            
-            # Set document properties
-            doc.styles['Normal'].font.name = 'Calibri'
-            doc.styles['Normal'].font.size = Pt(11)
-            
-            # Split content into paragraphs
-            paragraphs = content.split('\n')
-            
-            # Add paragraphs to the document
-            for paragraph in paragraphs:
-                if paragraph.strip():
-                    # Check if it's a heading (# or ## at the beginning)
-                    if paragraph.strip().startswith('#'):
-                        level = paragraph.count('#', 0, paragraph.find(' '))
-                        heading_text = paragraph.strip('#').strip()
-                        
-                        if level == 1:
-                            doc.add_heading(heading_text, 0)  # Title
-                        elif level == 2:
-                            doc.add_heading(heading_text, 1)  # Heading 1
-                        else:
-                            doc.add_heading(heading_text, level - 1)  # Other headings
-                    else:
-                        # Regular paragraph
-                        doc.add_paragraph(paragraph)
-            
-            # Ensure the output directory exists
-            os.makedirs(os.path.dirname(output_path), exist_ok=True)
-            
-            # Save the document
-            doc.save(output_path)
-            
-            return output_path
-            
-        except Exception as e:
-            logger.error(f"Error creating document: {e}")
-            return ""
-            
-    def _parse_content_to_sections(self, content: str) -> Dict[str, Any]:
-        """
-        Parse the content into sections for template rendering.
-        
-        Args:
-            content: The document content.
-            
-        Returns:
-            A dictionary with sections.
-        """
-        sections = {
-            'content': content  # Default, full content
+    def _parse_resume_sections(self, content: str) -> Dict[str, Any]:
+        """Parse resume content into sections for template rendering."""
+        context = {
+            "name": "",
+            "email": "",
+            "phone": "",
+            "summary": "",
+            "skills": [],
+            "experience": [],
+            "education": []
         }
         
-        try:
-            # Split content into lines
-            lines = content.split('\n')
-            
-            # Current section and section content
-            current_section = None
-            section_content = []
-            
-            # Extract sections based on markdown headings
-            for line in lines:
-                if line.startswith('# '):
-                    # Level 1 heading (title)
-                    if current_section:
-                        # Save previous section
-                        sections[current_section] = '\n'.join(section_content)
-                    
-                    # Start new section
-                    current_section = line[2:].strip().lower().replace(' ', '_')
-                    section_content = []
-                elif line.startswith('## '):
-                    # Level 2 heading (section)
-                    if current_section:
-                        # Save previous section
-                        sections[current_section] = '\n'.join(section_content)
-                    
-                    # Start new section
-                    current_section = line[3:].strip().lower().replace(' ', '_')
-                    section_content = []
+        # Simple section-based parsing
+        current_section = None
+        current_content = []
+        
+        for line in content.split("\n"):
+            line = line.strip()
+            if not line:
+                continue
+                
+            # Check for section headers
+            lower_line = line.lower()
+            if lower_line.endswith(":"):
+                # Save previous section
+                if current_section and current_content:
+                    if current_section == "skills":
+                        # Parse skills as list
+                        skills = []
+                        for skill_line in current_content:
+                            if skill_line.startswith("- "):
+                                skills.append(skill_line[2:])
+                            else:
+                                skills.extend([s.strip() for s in skill_line.split(",")])
+                        context["skills"] = skills
+                    elif current_section in context:
+                        context[current_section] = "\n".join(current_content)
+                
+                # Start new section
+                section_name = lower_line[:-1]  # Remove colon
+                if "name" in section_name:
+                    current_section = "name"
+                elif "contact" in section_name:
+                    current_section = "contact"
+                elif "summary" in section_name or "objective" in section_name:
+                    current_section = "summary"
+                elif "skill" in section_name:
+                    current_section = "skills"
+                elif "experience" in section_name or "work" in section_name:
+                    current_section = "experience"
+                elif "education" in section_name:
+                    current_section = "education"
                 else:
-                    # Content line
-                    if current_section:
-                        section_content.append(line)
-            
-            # Save the last section
-            if current_section and section_content:
-                sections[current_section] = '\n'.join(section_content)
+                    current_section = section_name
                 
-            # Extract specific sections for templates
-            # Contact information
-            if 'contact_information' in sections:
-                contact_lines = sections['contact_information'].split('\n')
-                for line in contact_lines:
-                    if ':' in line:
-                        key, value = line.split(':', 1)
-                        key = key.strip().lower().replace(' ', '_')
-                        sections[key] = value.strip()
-            
-            # Skills section - convert to list
-            if 'skills' in sections:
-                skills_text = sections['skills']
-                skills_list = []
+                current_content = []
+            else:
+                # Add line to current section
+                if current_section == "contact":
+                    # Try to extract contact details
+                    if "@" in line:
+                        context["email"] = line.strip()
+                    elif any(c.isdigit() for c in line):
+                        context["phone"] = line.strip()
+                    else:
+                        current_content.append(line)
+                elif current_section == "name":
+                    context["name"] = line.strip()
+                else:
+                    current_content.append(line)
+        
+        # Handle last section
+        if current_section and current_content:
+            if current_section == "skills":
+                skills = []
+                for skill_line in current_content:
+                    if skill_line.startswith("- "):
+                        skills.append(skill_line[2:])
+                    else:
+                        skills.extend([s.strip() for s in skill_line.split(",")])
+                context["skills"] = skills
+            elif current_section in context:
+                context[current_section] = "\n".join(current_content)
                 
-                for line in skills_text.split('\n'):
-                    line = line.strip()
-                    if line.startswith('- '):
-                        skills_list.append(line[2:])
-                    elif line:
-                        skills_list.append(line)
-                
-                sections['skills_list'] = skills_list
-                
-            # Look for an address block
-            address_block = []
-            for i, line in enumerate(lines):
-                # Look for patterns like a name followed by address details
-                if i < 10:  # Usually at the top
-                    address_block.append(line)
-            
-            if address_block:
-                sections['address_block'] = '\n'.join(address_block[:5])  # First few lines
-            
-            # Extract recipient information for cover letters
-            recipient_block = []
-            for i in range(len(lines)):
-                if i < 15 and "hiring manager" in lines[i].lower() or "recruiter" in lines[i].lower():
-                    for j in range(i, min(i+5, len(lines))):
-                        recipient_block.append(lines[j])
-                    break
-            
-            if recipient_block:
-                sections['recipient'] = '\n'.join(recipient_block)
-                
-        except Exception as e:
-            logger.error(f"Error parsing content to sections: {e}")
-            
-        return sections
+        return context
     
     def _extract_profile_from_resume(self, resume_content: str) -> Dict[str, Any]:
         """

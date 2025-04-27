@@ -55,70 +55,332 @@ class ApplicationTracker:
                        skills: Optional[List[Dict[str, Any]]] = None) -> JobApplication:
         """Add a new job application record with error handling and retries."""
         try:
+            # Validate required parameters
+            if not job_title or not job_title.strip():
+                raise ValueError("Job title is required")
+                
+            if not company or not company.strip():
+                raise ValueError("Company name is required")
+                
+            if not source or not source.strip():
+                logger.warning("Source not provided, defaulting to 'unknown'")
+                source = "unknown"
+                
+            if match_score < 0 or match_score > 1:
+                logger.warning(f"Invalid match score {match_score}, clamping to range 0-1")
+                match_score = max(0, min(match_score, 1))
+                
+            # Normalize paths to be absolute
+            resume_path = os.path.abspath(resume_path)
+            if cover_letter_path:
+                cover_letter_path = os.path.abspath(cover_letter_path)
+            
+            # Check if resume file exists
+            if not os.path.exists(resume_path):
+                logger.warning(f"Resume file not found: {resume_path}")
+                
+            # Check if cover letter file exists
+            if cover_letter_path and not os.path.exists(cover_letter_path):
+                logger.warning(f"Cover letter file not found: {cover_letter_path}")
+            
             with get_db() as db:
-                # Check for existing application
+                # Check for existing application with this job_id
                 existing = db.query(JobApplication).filter_by(job_id=job_id).first()
                 if existing:
-                    logger.warning(f"Application with job_id {job_id} already exists")
-                    return existing
-                    
-                # Create application record
+                    logger.info(f"Application for job {job_id} already exists, updating instead")
+                    return self.update_application(
+                        application_id=existing.id,
+                        status="updated",
+                        match_score=match_score,
+                        resume_path=resume_path,
+                        cover_letter_path=cover_letter_path,
+                        notes=notes
+                    )
+
+                # Create new application record with sanitized data
                 application = JobApplication(
-                    job_id=job_id,
-                    job_title=job_title,
-                    company=company,
-                    source=source,
+                    job_id=job_id[:100],  # Limit to 100 chars
+                    job_title=job_title[:200],  # Limit to 200 chars
+                    company=company[:200],  # Limit to 200 chars
+                    application_date=datetime.utcnow(),
+                    status="submitted",
+                    source=source[:50],  # Limit to 50 chars
                     match_score=match_score,
-                    resume_path=resume_path,
-                    cover_letter_path=cover_letter_path,
-                    notes=notes,
-                    url=url,
-                    job_description=job_description  # Store job description for vector search
+                    resume_path=resume_path[:500],  # Limit to 500 chars
+                    cover_letter_path=cover_letter_path[:500] if cover_letter_path else None,
+                    notes=notes[:1000] if notes else None,  # Limit to 1000 chars
+                    url=url[:500] if url else None,  # Limit to 500 chars
+                    job_description=job_description  # No limit since it's a Text field
                 )
+                
                 db.add(application)
+                db.flush()  # Get the ID without committing
+                application_id = application.id
                 
                 # Add skills if provided
-                if skills:
-                    for skill_data in skills:
-                        skill = JobSkill(
-                            application=application,
-                            skill_name=skill_data["name"],
-                            skill_category=skill_data.get("category", "technical"),
-                            required=skill_data.get("required", True),
-                            candidate_has=skill_data.get("candidate_has", False),
-                            match_score=skill_data.get("match_score", 0.0)
+                if skills and skills:
+                    self._add_job_skills(db, application_id, skills)
+                
+                # Create the initial interaction (submission)
+                interaction = ApplicationInteraction(
+                    application_id=application_id,
+                    interaction_type="submission",
+                    interaction_date=datetime.utcnow(),
+                    notes="Initial application submitted"
+                )
+                db.add(interaction)
+                
+                # Safe commit
+                success = safe_commit(db)
+                
+                if success:
+                    logger.info(f"Added application for {job_title} at {company} (ID: {application_id})")
+                    
+                    # Index the application asynchronously
+                    if job_description:
+                        self._index_application(application)
+                        
+                    # Update analytics
+                    self._update_statistics(application)
+                    
+                    # Log the application for audit
+                    self.audit_logger.log_event(
+                        "application_create",
+                        {"job_id": job_id, "job_title": job_title, "company": company}
+                    )
+                    
+                    return application
+                else:
+                    logger.error(f"Failed to commit application for {job_title} at {company}")
+                    return None
+                    
+        except ValueError as e:
+            logger.error(f"Validation error in add_application: {e}")
+            raise
+            
+        except Exception as e:
+            logger.error(f"Unexpected error in add_application: {e}")
+            raise
+            
+    @handle_db_errors
+    @with_retry()
+    def update_application(self,
+                        application_id: Optional[int] = None,
+                        job_id: Optional[str] = None,
+                        status: Optional[str] = None,
+                        match_score: Optional[float] = None,
+                        resume_path: Optional[str] = None,
+                        cover_letter_path: Optional[str] = None,
+                        notes: Optional[str] = None,
+                        url: Optional[str] = None,
+                        response_received: Optional[bool] = None,
+                        response_date: Optional[datetime] = None) -> Optional[JobApplication]:
+        """
+        Update an existing application by ID or job_id with retry mechanism.
+        
+        Args:
+            application_id: The ID of the application to update
+            job_id: Alternative job_id to identify application
+            status: New application status
+            match_score: Updated match score
+            resume_path: New resume path
+            cover_letter_path: New cover letter path
+            notes: Additional notes
+            url: Updated job URL
+            response_received: Whether a response was received
+            response_date: Date of response
+            
+        Returns:
+            Updated application or None if not found/update failed
+        """
+        try:
+            with get_db() as db:
+                # Find the application
+                if application_id is not None:
+                    application = db.query(JobApplication).filter_by(id=application_id).first()
+                elif job_id is not None:
+                    application = db.query(JobApplication).filter_by(job_id=job_id).first()
+                else:
+                    logger.error("Either application_id or job_id must be provided for update")
+                    return None
+                
+                if not application:
+                    logger.warning(f"Application not found for update: ID={application_id}, job_id={job_id}")
+                    return None
+                
+                # Track changes for logging
+                changes = {}
+                
+                # Update fields if provided and validate them
+                if status is not None:
+                    # Validate status
+                    valid_statuses = {"submitted", "applied", "interviewing", "offered", "accepted", 
+                                    "rejected", "withdrawn", "pending", "prepared", "in_progress", 
+                                    "failed", "error", "updated"}
+                    
+                    if status not in valid_statuses:
+                        logger.warning(f"Invalid status '{status}'. Using 'updated' instead.")
+                        status = "updated"
+                        
+                    changes["status"] = {"old": application.status, "new": status}
+                    application.status = status
+                    
+                if match_score is not None:
+                    # Validate match score
+                    if match_score < 0 or match_score > 1:
+                        match_score = max(0, min(match_score, 1))
+                        
+                    changes["match_score"] = {"old": application.match_score, "new": match_score}
+                    application.match_score = match_score
+                
+                if resume_path:
+                    # Validate resume path
+                    resume_path = os.path.abspath(resume_path)
+                    if not os.path.exists(resume_path):
+                        logger.warning(f"Resume file not found during update: {resume_path}")
+                        
+                    changes["resume_path"] = {"old": application.resume_path, "new": resume_path[:500]}
+                    application.resume_path = resume_path[:500]
+                
+                if cover_letter_path:
+                    # Validate cover letter path
+                    cover_letter_path = os.path.abspath(cover_letter_path)
+                    if not os.path.exists(cover_letter_path):
+                        logger.warning(f"Cover letter file not found during update: {cover_letter_path}")
+                        
+                    changes["cover_letter_path"] = {"old": application.cover_letter_path, 
+                                                  "new": cover_letter_path[:500]}
+                    application.cover_letter_path = cover_letter_path[:500]
+                
+                if notes:
+                    changes["notes"] = {"old": application.notes, "new": notes[:1000]}
+                    application.notes = notes[:1000]
+                
+                if url:
+                    changes["url"] = {"old": application.url, "new": url[:500]}
+                    application.url = url[:500]
+                
+                if response_received is not None:
+                    changes["response_received"] = {"old": application.response_received, "new": response_received}
+                    application.response_received = response_received
+                    
+                    # If we've received a response, set the response date
+                    if response_received and not application.response_date:
+                        application.response_date = datetime.utcnow()
+                
+                if response_date:
+                    changes["response_date"] = {"old": application.response_date, "new": response_date}
+                    application.response_date = response_date
+                
+                # Add an interaction if there are changes
+                if changes:
+                    change_list = ", ".join(f"{k}: {v['old']} -> {v['new']}" for k, v in changes.items() 
+                                          if v['old'] != v['new'])
+                    if change_list:
+                        interaction = ApplicationInteraction(
+                            application_id=application.id,
+                            interaction_type="update",
+                            interaction_date=datetime.utcnow(),
+                            notes=f"Application updated: {change_list}"
                         )
-                        db.add(skill)
+                        db.add(interaction)
+                        
+                # Safe commit
+                success = safe_commit(db)
                 
-                # Use safe commit with retries
-                safe_commit(db)
-                db.refresh(application)
+                if success:
+                    logger.info(f"Updated application ID {application.id} - {application.job_title} at {application.company}")
+                    
+                    # Log the update for audit
+                    self.audit_logger.log_event(
+                        "application_update",
+                        {"application_id": application.id, 
+                         "job_title": application.job_title, 
+                         "changes": changes}
+                    )
+                    
+                    return application
+                else:
+                    logger.error(f"Failed to commit application update for ID {application_id}")
+                    return None
+        
+        except Exception as e:
+            logger.error(f"Error updating application: {e}")
+            raise
+            
+    def get_application(self, 
+                     application_id: Optional[int] = None, 
+                     job_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
+        """
+        Get a single application by ID or job_id.
+        
+        Args:
+            application_id: The ID of the application to retrieve
+            job_id: Alternative job_id to identify application
+            
+        Returns:
+            Application as a dictionary or None if not found
+        """
+        try:
+            if application_id is None and job_id is None:
+                logger.error("Either application_id or job_id must be provided")
+                return None
                 
-                # Add to vector index if job description is available
-                if job_description:
-                    self._index_application(application)
+            with get_db() as db:
+                # Find the application
+                if application_id is not None:
+                    application = db.query(JobApplication).filter_by(id=application_id).first()
+                else:
+                    application = db.query(JobApplication).filter_by(job_id=job_id).first()
+                    
+                if not application:
+                    logger.warning(f"Application not found: ID={application_id}, job_id={job_id}")
+                    return None
+                    
+                # Convert to dictionary
+                result = {
+                    "id": application.id,
+                    "job_id": application.job_id,
+                    "job_title": application.job_title,
+                    "company": application.company,
+                    "application_date": application.application_date.isoformat() if application.application_date else None,
+                    "status": application.status,
+                    "source": application.source,
+                    "match_score": application.match_score,
+                    "resume_path": application.resume_path,
+                    "cover_letter_path": application.cover_letter_path,
+                    "response_received": application.response_received,
+                    "response_date": application.response_date.isoformat() if application.response_date else None,
+                    "notes": application.notes,
+                    "url": application.url,
+                }
                 
-                # Index skills if provided
-                if skills:
-                    self._index_skills(application.skills)
-                
-                # Log the event
-                self.audit_logger.log_application_event(
-                    "application_created",
+                # Get interactions
+                interactions = db.query(ApplicationInteraction).filter_by(application_id=application.id).all()
+                result["interactions"] = [
                     {
-                        "job_id": job_id,
-                        "company": company,
-                        "source": source,
-                        "match_score": match_score
+                        "id": interaction.id,
+                        "type": interaction.interaction_type,
+                        "date": interaction.interaction_date.isoformat() if interaction.interaction_date else None,
+                        "notes": interaction.notes,
+                        "next_steps": interaction.next_steps,
+                        "outcome": interaction.outcome
                     }
+                    for interaction in interactions
+                ]
+                
+                # Log the retrieval for audit
+                self.audit_logger.log_event(
+                    "application_retrieve",
+                    {"application_id": application.id, "job_title": application.job_title}
                 )
                 
-                return application
+                return result
                 
         except Exception as e:
-            logger.error(f"Error adding application: {e}")
-            raise
-    
+            logger.error(f"Error getting application: {e}")
+            return None
+            
     @handle_db_errors
     @with_retry()
     def _index_application(self, application: JobApplication) -> bool:

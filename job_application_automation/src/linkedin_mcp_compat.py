@@ -34,28 +34,37 @@ class MockMCPConfig:
         }
 
 class MockLinkedInMCP:
-    """Mock LinkedIn MCP class when the real module is not available."""
+    """Mock implementation of LinkedIn MCP class."""
     
     def __init__(self, config):
-        """Initialize with configuration."""
         self.config = config
-        logger.warning("Using mock LinkedIn MCP implementation because the linkedin_mcp package is not installed.")
-    
-    async def auth(self):
+        logger.info("Initialized mock LinkedIn MCP client")
+        
+    async def authenticate(self):
         """Mock authentication method."""
-        logger.warning("LinkedIn MCP authentication attempted, but the package is not installed.")
+        logger.info("Mock authentication called - always returns False")
         return False
         
-    async def search_jobs(self, keywords=None, location=None):
+    async def search_jobs(self, keywords, location, count=10):
         """Mock job search method."""
-        logger.warning("LinkedIn MCP job search attempted, but the package is not installed.")
+        logger.info(f"Mock job search called with keywords: {keywords}, location: {location}")
         return []
+        
+    async def get_job_description(self, job_id):
+        """Mock job description retrieval."""
+        logger.info(f"Mock get job description called for job ID: {job_id}")
+        return {"description": "This is a mock job description."}
+        
+    async def apply_to_job(self, job_id, resume_path, cover_letter_path=None):
+        """Mock job application."""
+        logger.info(f"Mock apply to job called for job ID: {job_id}")
+        return False
 
 # Try to import the real linkedin_mcp module
 try:
     import importlib
     linkedin_mcp_spec = importlib.util.find_spec("linkedin_mcp")
-    if linkedin_mcp_spec is not None:
+    if (linkedin_mcp_spec is not None):
         # The module exists, so we can safely import it
         from linkedin_mcp import LinkedInMCP, MCPConfig
         LINKEDIN_MCP_AVAILABLE = True

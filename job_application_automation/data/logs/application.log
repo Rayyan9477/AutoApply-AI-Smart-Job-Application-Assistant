@@ -1,0 +1,58 @@
+2025-04-27 22:05:58,706 - numexpr.utils - INFO - NumExpr defaulting to 4 threads.
+2025-04-27 22:06:11,420 - browser_automation - INFO - Browser initialized with chromium
+2025-04-27 22:06:11,420 - linkedin_integration - INFO - LinkedIn MCP API credentials not configured - using cookie-based authentication instead
+2025-04-27 22:06:11,425 - resume_cover_letter_generator - WARNING - Model file not found - will use template-based generation instead
+2025-04-27 22:06:11,425 - src.resume_optimizer - INFO - Loading sentence transformer model...
+2025-04-27 22:06:11,425 - sentence_transformers.SentenceTransformer - INFO - Use pytorch device_name: cpu
+2025-04-27 22:06:11,425 - sentence_transformers.SentenceTransformer - INFO - Load pretrained SentenceTransformer: all-MiniLM-L6-v2
+2025-04-27 22:06:13,502 - src.resume_optimizer - WARNING - Failed to load sentence transformer model: sentence-transformers/all-MiniLM-L6-v2 is not a local folder and is not a valid model identifier listed on 'https://huggingface.co/models'
+If this is a private repository, make sure to pass a token having permission to this repo either by logging in with `huggingface-cli login` or by passing `token=<your_token>`. Using fallback embedding method.
+2025-04-27 22:06:13,502 - src.resume_optimizer - WARNING - No local model found. Using fallback text comparison.
+2025-04-27 22:06:13,513 - src.resume_optimizer - INFO - FAISS vector index initialized for ATS scoring
+2025-04-27 22:06:13,513 - src.resume_optimizer - INFO - Loading sentence transformer model...
+2025-04-27 22:06:13,534 - sentence_transformers.SentenceTransformer - INFO - Use pytorch device_name: cpu
+2025-04-27 22:06:13,534 - sentence_transformers.SentenceTransformer - INFO - Load pretrained SentenceTransformer: all-MiniLM-L6-v2
+2025-04-27 22:06:15,453 - src.resume_optimizer - WARNING - Failed to load sentence transformer model: sentence-transformers/all-MiniLM-L6-v2 is not a local folder and is not a valid model identifier listed on 'https://huggingface.co/models'
+If this is a private repository, make sure to pass a token having permission to this repo either by logging in with `huggingface-cli login` or by passing `token=<your_token>`. Using fallback embedding method.
+2025-04-27 22:06:15,455 - src.resume_optimizer - WARNING - No local model found. Using fallback text comparison.
+2025-04-27 22:06:15,456 - src.resume_optimizer - INFO - FAISS vector index initialized for ATS scoring
+2025-04-27 22:06:15,460 - src.resume_cover_letter_generator - WARNING - Model file not found - will use template-based generation instead
+2025-04-27 22:06:15,502 - ats_integration - INFO - ATS state loaded successfully
+2025-04-27 22:06:15,505 - __main__ - INFO - Job Application Automation initialized
+2025-04-27 22:06:15,536 - __main__ - INFO - Loaded candidate profile from file
+2025-04-27 22:06:15,538 - linkedin_integration - INFO - Found saved LinkedIn cookies, attempting to use them
+2025-04-27 22:06:15,550 - src.browser_automation - INFO - Browser initialized with chromium
+2025-04-27 22:06:36,511 - src.browser_automation - INFO - Loaded cookies from C:\Users\rayyan\Downloads\VS Code Workspace\linkedin\job_application_automation\data\sessions\linkedin_cookies.json
+2025-04-27 22:06:44,206 - src.browser_automation - INFO - Successfully authenticated using LinkedIn cookies
+2025-04-27 22:06:48,139 - linkedin_integration - INFO - Successfully authenticated with LinkedIn using saved cookies
+2025-04-27 22:06:48,141 - __main__ - INFO - Searching for jobs on LinkedIn with keywords ['software engineer', 'python'] in Remote
+2025-04-27 22:06:48,141 - src.browser_automation - INFO - Browser initialized with chromium
+2025-04-27 22:06:48,141 - linkedin_integration - INFO - Searching LinkedIn for jobs: software engineer python in Remote (attempt 1)
+2025-04-27 22:06:59,634 - src.browser_automation - INFO - Navigated to https://www.linkedin.com/jobs/
+2025-04-27 22:06:59,636 - src.browser_automation - ERROR - Error searching LinkedIn: object NoneType can't be used in 'await' expression
+2025-04-27 22:07:00,415 - src.browser_automation - INFO - Saved error screenshot to ../data/screenshots\linkedin_error.png
+2025-04-27 22:07:00,628 - src.browser_automation - INFO - Saved 0 job listings to C:\Users\rayyan\Downloads\VS Code Workspace\linkedin\job_application_automation\data\job_listings.json
+2025-04-27 22:07:00,628 - linkedin_integration - WARNING - No results found on attempt 1. Retrying...
+2025-04-27 22:07:02,640 - linkedin_integration - INFO - Searching LinkedIn for jobs: software engineer python in None (attempt 2)
+2025-04-27 22:07:04,839 - src.browser_automation - INFO - Navigated to https://www.linkedin.com/jobs/
+2025-04-27 22:07:04,843 - src.browser_automation - ERROR - Error searching LinkedIn: object NoneType can't be used in 'await' expression
+2025-04-27 22:07:05,473 - src.browser_automation - INFO - Saved error screenshot to ../data/screenshots\linkedin_error.png
+2025-04-27 22:07:05,688 - src.browser_automation - INFO - Saved 0 job listings to C:\Users\rayyan\Downloads\VS Code Workspace\linkedin\job_application_automation\data\job_listings.json
+2025-04-27 22:07:05,690 - linkedin_integration - WARNING - No results found on attempt 2. Retrying...
+2025-04-27 22:07:09,693 - linkedin_integration - INFO - Searching LinkedIn for jobs: software engineer in None (attempt 3)
+2025-04-27 22:07:11,918 - src.browser_automation - INFO - Navigated to https://www.linkedin.com/jobs/
+2025-04-27 22:07:11,922 - src.browser_automation - ERROR - Error searching LinkedIn: object NoneType can't be used in 'await' expression
+2025-04-27 22:07:12,575 - src.browser_automation - INFO - Saved error screenshot to ../data/screenshots\linkedin_error.png
+2025-04-27 22:07:12,786 - src.browser_automation - INFO - Saved 0 job listings to C:\Users\rayyan\Downloads\VS Code Workspace\linkedin\job_application_automation\data\job_listings.json
+2025-04-27 22:07:12,788 - linkedin_integration - WARNING - No results found on attempt 3. Retrying...
+2025-04-27 22:07:20,797 - linkedin_integration - INFO - Saved 0 LinkedIn job listings to ../data/linkedin_job_listings.json
+2025-04-27 22:07:20,801 - linkedin_integration - INFO - Found 0 jobs on LinkedIn
+2025-04-27 22:07:20,801 - __main__ - INFO - Found 0 jobs on LinkedIn
+2025-04-27 22:07:20,801 - __main__ - INFO - Searching for jobs on linkedin with keywords ['software engineer', 'python'] in Remote
+2025-04-27 22:07:22,745 - browser_automation - INFO - Navigated to https://www.linkedin.com/jobs/
+2025-04-27 22:07:22,750 - browser_automation - ERROR - Error searching LinkedIn: object NoneType can't be used in 'await' expression
+2025-04-27 22:07:23,444 - browser_automation - INFO - Saved error screenshot to ../data/screenshots\linkedin_error.png
+2025-04-27 22:07:23,633 - browser_automation - INFO - Saved 0 job listings to C:\Users\rayyan\Downloads\VS Code Workspace\linkedin\job_application_automation\data\job_listings.json
+2025-04-27 22:07:23,633 - __main__ - INFO - Found 0 jobs through browser automation
+2025-04-27 22:07:23,635 - __main__ - INFO - Saved 0 combined job listings
+2025-04-27 22:07:23,636 - __main__ - ERROR - No job listings found

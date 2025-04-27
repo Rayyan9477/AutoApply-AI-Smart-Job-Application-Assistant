@@ -20,6 +20,7 @@ import os
 # Define project root path for use throughout the module
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, project_root)
+sys.path.insert(0, os.path.join(project_root, 'src'))
 
 # Import project modules
 from browser_automation import JobSearchBrowser
@@ -30,21 +31,22 @@ from application_tracker import ApplicationTracker
 from ats_integration import ATSIntegrationManager
 
 # Import configuration
-from config.browser_config import BrowserConfig
-from config.crawl4ai_config import Crawl4AIConfig
-from config.linkedin_mcp_config import LinkedInMCPConfig
-from config.llama_config import LlamaConfig
+from config.config import get_config
+from pathlib import Path
 
-# Set up logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler("../data/main.log"),
-        logging.StreamHandler()
-    ]
-)
+CONFIG = get_config()
+
 logger = logging.getLogger(__name__)
+# Configure logging based on centralized config
+log_dir = Path(CONFIG.logging.log_dir)
+log_dir.mkdir(parents=True, exist_ok=True)
+main_log = Path(CONFIG.data_dir) / "main.log"
+handler = logging.FileHandler(main_log)
+handler.setFormatter(logging.Formatter(CONFIG.logging.format))
+logger.addHandler(handler)
+if CONFIG.logging.console_logging:
+    logger.addHandler(logging.StreamHandler())
+logger.setLevel(CONFIG.logging.level)
 
 
 class JobApplicationAutomation:
@@ -54,10 +56,10 @@ class JobApplicationAutomation:
     """
 
     def __init__(self,
-            browser_config: Optional[BrowserConfig] = None,
-            crawl4ai_config: Optional[Crawl4AIConfig] = None,
-            linkedin_config: Optional[LinkedInMCPConfig] = None,
-            llama_config: Optional[LlamaConfig] = None):
+            browser_config=None,
+            crawl4ai_config=None,
+            linkedin_config=None,
+            llm_config=None):
         """
         Initialize the JobApplicationAutomation with configuration settings.
         
@@ -65,22 +67,22 @@ class JobApplicationAutomation:
             browser_config: Configuration for browser automation.
             crawl4ai_config: Configuration for web scraping.
             linkedin_config: Configuration for LinkedIn integration.
-            llama_config: Configuration for LLM integration.
+            llm_config: Configuration for LLM integration.
         """
         # Initialize configurations
-        self.browser_config = browser_config or BrowserConfig()
-        self.crawl4ai_config = crawl4ai_config or Crawl4AIConfig()
-        self.linkedin_config = linkedin_config or LinkedInMCPConfig()
-        self.llama_config = llama_config or LlamaConfig()
+        self.browser_config = browser_config or CONFIG.browser
+        self.crawl4ai_config = crawl4ai_config or CONFIG.crawl
+        self.linkedin_config = linkedin_config or CONFIG.linkedin
+        self.llm_config = llm_config or CONFIG.llm
         
         # Initialize components
         self.job_search_browser = JobSearchBrowser(self.browser_config)
         self.job_details_scraper = JobDetailsScraper(self.crawl4ai_config)
         self.linkedin_integration = LinkedInIntegration(self.linkedin_config)
-        self.resume_generator = ResumeGenerator(self.llama_config)
+        self.resume_generator = ResumeGenerator(self.llm_config)
         
         # Initialize ATS integration
-        self.ats_manager = ATSIntegrationManager(self.llama_config)
+        self.ats_manager = ATSIntegrationManager(self.llm_config)
         self.ats_manager.load_state()
         
         # Application state
@@ -89,10 +91,10 @@ class JobApplicationAutomation:
         self.candidate_profile = {}
         self.applications_submitted = 0
         
-        # Create necessary directories
-        os.makedirs("../data", exist_ok=True)
-        os.makedirs("../data/generated_cover_letters", exist_ok=True)
-        os.makedirs("../data/ats_reports", exist_ok=True)
+        # Ensure core data directories exist
+        Path(CONFIG.data_dir).mkdir(parents=True, exist_ok=True)
+        for sub in ["generated_cover_letters", "ats_reports"]:
+            Path(CONFIG.data_dir, sub).mkdir(exist_ok=True)
         
         # Initialize application tracker
         self.application_tracker = ApplicationTracker()
@@ -114,7 +116,7 @@ class JobApplicationAutomation:
             return False
             
         # Create necessary session directories
-        os.makedirs(os.path.join(project_root, "data", "sessions"), exist_ok=True)
+        Path(CONFIG.data_dir, "sessions").mkdir(exist_ok=True)
         
         # Authenticate with LinkedIn if needed
         authenticated = await self.linkedin_integration.authenticate()

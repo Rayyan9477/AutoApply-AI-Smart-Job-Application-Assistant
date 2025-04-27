@@ -11,8 +11,10 @@ import logging
 import asyncio
 import requests
 import random
-from typing import List, Dict, Any, Optional, Union
+from typing import List, Dict, Any, Optional, Union, Callable
 from datetime import datetime, timedelta
+from functools import wraps
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
 # Import configuration
 import sys
@@ -39,6 +41,53 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Custom exceptions for better error handling
+class LinkedInAuthError(Exception):
+    """Exception raised for LinkedIn authentication errors."""
+    pass
+
+class LinkedInRateLimitError(Exception):
+    """Exception raised for LinkedIn rate limiting."""
+    pass
+
+class LinkedInNetworkError(Exception):
+    """Exception raised for LinkedIn network errors."""
+    pass
+
+def linkedin_error_handler(func: Callable) -> Callable:
+    """
+    Decorator to handle common LinkedIn API errors with appropriate logging and exception handling.
+    
+    Args:
+        func: The function to wrap
+        
+    Returns:
+        Wrapped function with error handling
+    """
+    @wraps(func)
+    async def wrapper(*args, **kwargs):
+        try:
+            return await func(*args, **kwargs)
+        except requests.exceptions.ConnectionError as e:
+            logger.error(f"LinkedIn network connection error: {e}")
+            raise LinkedInNetworkError(f"Network connection error: {e}") from e
+        except requests.exceptions.Timeout as e:
+            logger.error(f"LinkedIn request timeout: {e}")
+            raise LinkedInNetworkError(f"Request timeout: {e}") from e
+        except requests.exceptions.HTTPError as e:
+            if e.response.status_code == 429:
+                logger.error(f"LinkedIn rate limit exceeded: {e}")
+                raise LinkedInRateLimitError(f"Rate limit exceeded: {e}") from e
+            elif e.response.status_code in (401, 403):
+                logger.error(f"LinkedIn authentication error: {e}")
+                raise LinkedInAuthError(f"Authentication error: {e}") from e
+            else:
+                logger.error(f"LinkedIn HTTP error: {e}")
+                raise
+        except Exception as e:
+            logger.error(f"Unexpected LinkedIn error: {e}")
+            raise
+    return wrapper
 
 class LinkedInIntegration:
     """
@@ -71,40 +120,38 @@ class LinkedInIntegration:
                 self.mcp_server = None
                 return
                 
-            # Import MCP server only if we actually plan to use it
-            try:
-                # Try to import linkedin_mcp module
-                # This is conditionally imported to avoid errors if the package is not installed
-                import importlib.util
-                if importlib.util.find_spec("linkedin_mcp"):
-                    from linkedin_mcp import LinkedInMCP, MCPConfig
-                    
-                    # Configure MCP server
-                    mcp_config = MCPConfig(
-                        client_id=self.config.client_id,
-                        client_secret=self.config.client_secret,
-                        redirect_uri=self.config.redirect_uri,
-                        session_storage_path=self.config.session_storage_path
-                    )
-                    
-                    # Initialize the MCP server
-                    self.mcp_server = LinkedInMCP(mcp_config)
-                    logger.info("LinkedIn MCP server initialized successfully")
-                else:
-                    logger.warning("LinkedIn MCP package not found - cannot use API features")
-                    self.mcp_server = None
+            # Use our compatibility module to check for MCP availability
+            mcp_available = is_linkedin_mcp_available()
+            if (mcp_available):
+                # Create MCP server using compatibility layer
+                config_dict = {
+                    "client_id": self.config.client_id,
+                    "client_secret": self.config.client_secret,
+                    "redirect_uri": self.config.redirect_uri,
+                    "session_storage_path": self.config.session_storage_path
+                }
                 
-            except ImportError:
-                logger.warning("LinkedIn MCP package not installed - cannot use API features")
+                # Get MCP instance through our compatibility layer
+                self.mcp_server = create_linkedin_mcp(config_dict)
+                logger.info("LinkedIn MCP server initialized successfully")
+            else:
+                logger.warning("LinkedIn MCP package not available - cannot use API features")
                 self.mcp_server = None
                 
         except Exception as e:
             logger.error(f"Error setting up LinkedIn MCP server: {e}")
             self.mcp_server = None
             
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=2, max=10),
+        retry=retry_if_exception_type((LinkedInNetworkError, LinkedInRateLimitError))
+    )
+    @linkedin_error_handler
     async def authenticate(self) -> bool:
         """
         Authenticate with LinkedIn using OAuth 2.0 or saved cookies.
+        Uses retry mechanism for handling transient failures.
         
         Returns:
             True if authentication was successful, False otherwise.
@@ -264,13 +311,44 @@ class LinkedInIntegration:
             # Convert keywords list to string
             keywords_str = " ".join(keywords) if keywords else ""
             
-            # Use browser automation to search for jobs
-            logger.info(f"Searching LinkedIn for jobs: {keywords_str} in {location}")
-            job_listings = await browser.search_for_jobs(
-                keywords=[keywords_str] if keywords_str else None,
-                location=location,
-                job_site="linkedin"
-            )
+            # Use browser automation to search for jobs with retry logic
+            max_retries = 3
+            retry_count = 0
+            job_listings = []
+            
+            while retry_count < max_retries:
+                try:
+                    logger.info(f"Searching LinkedIn for jobs: {keywords_str} in {location} (attempt {retry_count + 1})")
+                    job_listings = await browser.search_for_jobs(
+                        keywords=[keywords_str] if keywords_str else None,
+                        location=location,
+                        job_site="linkedin"
+                    )
+                    
+                    # If we got results, break out of retry loop
+                    if job_listings:
+                        break
+                        
+                    # If no results, wait and retry with slightly modified query
+                    logger.warning(f"No results found on attempt {retry_count + 1}. Retrying...")
+                    retry_count += 1
+                    
+                    # Add small variations to search on retry
+                    if retry_count == 1 and keywords:
+                        # On first retry, try without location constraint
+                        location = None
+                    elif retry_count == 2 and len(keywords) > 1:
+                        # On second retry, try with just the first keyword
+                        keywords_str = keywords[0] if keywords else ""
+                    
+                    # Wait between retries with exponential backoff
+                    backoff_time = 2 ** retry_count
+                    await asyncio.sleep(backoff_time)
+                    
+                except Exception as e:
+                    logger.error(f"Error during job search attempt {retry_count + 1}: {e}")
+                    retry_count += 1
+                    await asyncio.sleep(5)
             
             # Limit results if count is specified
             if count and len(job_listings) > count:
@@ -279,6 +357,7 @@ class LinkedInIntegration:
             # Save job listings
             self._save_job_listings(job_listings)
             
+            logger.info(f"Found {len(job_listings)} jobs on LinkedIn")
             return job_listings
             
         except Exception as e:

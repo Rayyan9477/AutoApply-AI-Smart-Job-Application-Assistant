@@ -17,6 +17,7 @@ import faiss
 from textblob import TextBlob
 import spacy
 import pandas as pd
+import requests
 
 # Import project modules
 try:
@@ -67,16 +68,32 @@ class ATSScorer:
         """Initialize the ATSScorer with embedding model."""
         os.makedirs(DATA_DIR, exist_ok=True)
         
-        # Initialize embedding model with fallback
+        # Initialize embedding model with proper fallback mechanisms
+        self.embedding_model = None
+        self.embedding_dim = 384  # Default dimension for all-MiniLM-L6-v2
+        
         try:
+            # First try to load the model
+            logger.info("Loading sentence transformer model...")
             self.embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
             self.embedding_dim = self.embedding_model.get_sentence_embedding_dimension()
-            logger.info("Successfully loaded sentence transformer model")
+            logger.info(f"Successfully loaded sentence transformer model with dimension {self.embedding_dim}")
         except (OSError, ConnectionError, requests.exceptions.ConnectionError) as e:
             logger.warning(f"Failed to load sentence transformer model: {e}. Using fallback embedding method.")
-            self.embedding_model = None
-            self.embedding_dim = 384  # Default dimension for all-MiniLM-L6-v2
             
+            # Try to load a local model if available
+            try:
+                local_model_path = os.path.join(os.path.expanduser('~'), '.cache', 'sentence_transformers')
+                if os.path.exists(local_model_path):
+                    logger.info(f"Attempting to load local model from {local_model_path}")
+                    self.embedding_model = SentenceTransformer(local_model_path)
+                    self.embedding_dim = self.embedding_model.get_sentence_embedding_dimension()
+                    logger.info("Successfully loaded local sentence transformer model")
+                else:
+                    logger.warning("No local model found. Using fallback text comparison.")
+            except Exception as local_error:
+                logger.error(f"Failed to load local model: {local_error}")
+                
         # Initialize FAISS index for resume-job matching
         self._setup_vector_index()
         

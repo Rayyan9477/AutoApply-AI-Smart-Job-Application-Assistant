@@ -13,14 +13,16 @@ from datetime import datetime
 from functools import lru_cache, wraps
 import time
 from sentence_transformers import SentenceTransformer
-from src.database_errors import handle_db_errors, with_retry
+from database_errors import handle_db_errors, with_retry
+from config.config import get_config
 
 # Set up logging
 logger = logging.getLogger(__name__)
 
-# Default paths
-DEFAULT_INDEX_DIR = Path("data/vector_indices")
-DEFAULT_EMBEDDINGS_CACHE = Path("data/embeddings_cache")
+# Default paths from centralized config
+CONFIG = get_config()
+DEFAULT_INDEX_DIR = Path(CONFIG.data_dir) / "vector_indices"
+DEFAULT_EMBEDDINGS_CACHE = Path(CONFIG.data_dir) / "embeddings_cache"
 
 # Function to time vector operations for performance monitoring
 def time_vector_operation(operation_name: str):
