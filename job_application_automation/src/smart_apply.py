@@ -284,9 +284,18 @@ class SmartJobApplicant:
         """
         return self.app_tracker.get_application(application_id)
     
-    def generate_ats_report(self) -> str:
-        """Generate overall ATS performance report."""
-        return self.ats_manager.generate_ats_performance_report()
+    def generate_ats_report(self, format: str = "html", output_path: Optional[str] = None) -> str:
+        """
+        Generate overall ATS performance report.
+        
+        Args:
+            format: Report format ("html", "json", or "text")
+            output_path: Optional output file path
+            
+        Returns:
+            Path to the generated report
+        """
+        return self.ats_manager.generate_ats_performance_report(format, output_path)
 
 
 async def main():

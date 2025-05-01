@@ -17,6 +17,11 @@ from src.resume_optimizer import ATSScorer, ResumeOptimizer
 from src.application_tracker import ApplicationTracker
 from config.llama_config import LlamaConfig
 
+# Import for GitHub token-based Llama 4 integration
+from azure.ai.inference import ChatCompletionsClient
+from azure.ai.inference.models import SystemMessage, UserMessage
+from azure.core.credentials import AzureKeyCredential
+
 # Set up logging
 logging.basicConfig(
     level=logging.INFO,
@@ -33,21 +38,182 @@ DATA_DIR = Path("../data")
 REPORTS_DIR = DATA_DIR / "ats_reports"
 os.makedirs(REPORTS_DIR, exist_ok=True)
 
+class LLMConfigAdapter:
+    """
+    Adapter class to provide compatibility between different LLM configuration classes.
+    This adapter bridges the gap between LLMConfig from main configuration and 
+    LlamaConfig from llama-specific configuration.
+    """
+    
+    def __init__(self, config):
+        """
+        Initialize with original configuration.
+        
+        Args:
+            config: Original configuration object (LLMConfig or LlamaConfig)
+        """
+        self.config = config
+        
+    def __getattr__(self, name):
+        """
+        Provide attribute access with fallback values for compatibility.
+        
+        Args:
+            name: Attribute name to access
+            
+        Returns:
+            Attribute value with appropriate default if not found
+        """
+        # If the attribute exists in the original config, return it
+        if hasattr(self.config, name):
+            return getattr(self.config, name)
+            
+        # Otherwise, provide compatibility defaults based on attribute name
+        defaults = {
+            'use_api': True,
+            'api_provider': getattr(self.config, 'provider', 'openai'),
+            'api_key': getattr(self.config, 'api_key', None),
+            'github_token': os.environ.get("GITHUB_TOKEN", None),
+            'api_model': getattr(self.config, 'model', 'meta/Llama-4-Maverick-17B-128E-Instruct-FP8'),
+            'temperature': getattr(self.config, 'temperature', 0.7),
+            'top_p': getattr(self.config, 'top_p', 0.9),
+            'max_tokens': getattr(self.config, 'max_tokens', 4000),
+        }
+        
+        if name in defaults:
+            return defaults[name]
+            
+        # Attribute doesn't exist and no default is defined
+        raise AttributeError(f"'{type(self.config).__name__}' object has no attribute '{name}'")
+        
+    def __str__(self):
+        """String representation of the adapter."""
+        return f"LLMConfigAdapter({self.config})"
+        
+    def get_api_config(self):
+        """
+        Implement the get_api_config method required by ResumeOptimizer.
+        
+        Returns:
+            Dictionary with API configuration
+        """
+        # If the original config has this method, delegate to it
+        if hasattr(self.config, 'get_api_config'):
+            return self.config.get_api_config()
+            
+        # Otherwise, create API config based on provider
+        provider = getattr(self.config, 'provider', getattr(self.config, 'api_provider', 'openai'))
+        
+        if provider == 'github':
+            return {
+                "endpoint": getattr(self.config, 'api_base_url', "https://models.github.ai/inference"),
+                "token": getattr(self.config, 'github_token', os.environ.get("GITHUB_TOKEN", "")),
+                "model": getattr(self.config, 'api_model', getattr(self.config, 'model', "meta/Llama-4-Maverick-17B-128E-Instruct-FP8")),
+                "timeout": getattr(self.config, 'api_request_timeout', 60)
+            }
+        elif provider in ('openai', 'groq', 'openrouter'):
+            return {
+                "api_base": getattr(self.config, 'api_base_url', None),
+                "api_key": getattr(self.config, 'api_key', None),
+                "model": getattr(self.config, 'api_model', getattr(self.config, 'model', "gpt-4")),
+                "timeout": getattr(self.config, 'api_request_timeout', 60)
+            }
+        return {}
 
 class ATSIntegrationManager:
     """
     Manager class for ATS integration in the job application process.
     """
     
-    def __init__(self, llama_config: Optional[LlamaConfig] = None):
-        """Initialize the ATS Integration Manager."""
+    def __init__(self, llm_config=None):
+        """
+        Initialize the ATS Integration Manager with the given configuration.
+        
+        Args:
+            llm_config: Configuration for LLM integration. If None, default settings will be used.
+        """
+        # Use config adapter to ensure compatibility
+        if llm_config:
+            self.llama_config = LLMConfigAdapter(llm_config)
+        else:
+            try:
+                from config.llama_config import LlamaConfig
+                self.llama_config = LlamaConfig()
+            except ImportError:
+                from config.config import LLMConfig
+                self.llama_config = LLMConfig()
+        
+        # Initialize components
         self.scorer = ATSScorer()
-        self.optimizer = ResumeOptimizer(llama_config)
+        self.optimizer = ResumeOptimizer(self.llama_config)
+        
+        # For tracking state
         self.app_tracker = ApplicationTracker()
         self.score_history = []
         self.resume_cache = {}  # Cache for resume scores
-        self.state_file = os.path.join(DATA_DIR, "ats_state.json")
+        self.state_file = os.path.join(DATA_DIR, "ats_state.json") 
         self.state = {}
+        
+        # Set up LLM client
+        self.llm_client = self._setup_llm_client()
+        
+    def _setup_llm_client(self):
+        """Set up the LLM client based on configuration."""
+        if not self.llama_config.use_api:
+            logger.info("Using local LLM model")
+            return None
+            
+        if self.llama_config.api_provider == "github":
+            logger.info("Setting up Llama 4 with GitHub token")
+            try:
+                config = self.llama_config.get_api_config()
+                token = config.get("token")
+                endpoint = config.get("endpoint", "https://models.github.ai/inference")
+                model = config.get("model", "meta/Llama-4-Maverick-17B-128E-Instruct-FP8")
+                
+                if not token:
+                    logger.error("GitHub token not found. Set GITHUB_TOKEN environment variable.")
+                    return None
+                
+                client = ChatCompletionsClient(
+                    endpoint=endpoint,
+                    credential=AzureKeyCredential(token),
+                )
+                logger.info(f"Successfully set up Llama 4 client with model {model}")
+                return {"client": client, "model": model}
+            except Exception as e:
+                logger.error(f"Failed to set up Llama 4 client: {e}")
+                return None
+        else:
+            logger.info(f"Using {self.llama_config.api_provider} API provider")
+            # Other API providers would be set up differently here
+            return None
+    
+    def get_llm_response(self, system_prompt: str, user_prompt: str) -> str:
+        """Get a response from the LLM."""
+        if not self.llm_client:
+            logger.error("LLM client not properly set up")
+            return ""
+            
+        try:
+            logger.info("Sending request to Llama 4")
+            response = self.llm_client["client"].complete(
+                messages=[
+                    SystemMessage(system_prompt),
+                    UserMessage(user_prompt),
+                ],
+                temperature=self.llama_config.temperature,
+                top_p=self.llama_config.top_p,
+                max_tokens=1000,
+                model=self.llm_client["model"]
+            )
+            
+            result = response.choices[0].message.content
+            logger.info(f"Received {len(result)} characters from LLM")
+            return result
+        except Exception as e:
+            logger.error(f"Error getting LLM response: {e}")
+            return ""
         
     def process_job_application(self, 
                              resume_path: str,

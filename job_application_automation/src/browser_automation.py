@@ -55,7 +55,8 @@ class JobSearchBrowser:
         
     def _setup_browser(self) -> None:
         """Set up the browser using the configuration settings."""
-        if self.config.browser_use_api_key:
+        # Check if the attribute exists before using it (prevents AttributeError)
+        if hasattr(self.config, 'browser_use_api_key') and self.config.browser_use_api_key:
             os.environ["BROWSER_USE_API_KEY"] = self.config.browser_use_api_key
         
         # Ensure directories exist

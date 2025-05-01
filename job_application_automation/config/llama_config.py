@@ -1,5 +1,5 @@
 """
-Configuration settings for LLM integration using Llama 4 Mevrick.
+Configuration settings for LLM integration using Llama 4 Maverick.
 """
 import os
 from pydantic import BaseModel, SecretStr
@@ -10,18 +10,21 @@ from dotenv import load_dotenv
 load_dotenv()
 
 class LlamaConfig(BaseModel):
-    """Configuration for Llama 4 Mevrick LLM integration."""
+    """Configuration for Llama 4 Maverick LLM integration."""
     
     # API Integration Settings
-    use_api: bool = False  # Set to True to use API instead of local model
-    api_provider: Literal["local", "groq", "openrouter"] = "local"
+    use_api: bool = True  # Default to use API since we're using GitHub token approach
+    api_provider: Literal["local", "groq", "openrouter", "github"] = "github"
     api_key: Optional[str] = None
-    api_base_url: Optional[str] = None
-    api_model: Optional[str] = "llama-4-maverick"  # Default model name for Llama 4 Maverick
+    api_base_url: Optional[str] = "https://models.github.ai/inference"
+    api_model: Optional[str] = "meta/Llama-4-Maverick-17B-128E-Instruct-FP8"  # Default model name for Llama 4 Maverick
     api_request_timeout: int = 60  # Seconds
     
+    # GitHub token for Llama 4 access
+    github_token: Optional[str] = None
+    
     # Model settings
-    model_path: str = "../models/llama-4-mevrick"
+    model_path: str = "../models/llama-4-maverick"
     model_type: Literal["llama", "gpt4all", "falcon"] = "llama"
     context_length: int = 4096
     temperature: float = 0.7
@@ -200,19 +203,26 @@ class LlamaConfig(BaseModel):
                 "model": self.api_model or "meta/llama-4-maverick",
                 "timeout": self.api_request_timeout
             }
+        elif self.api_provider == "github":
+            return {
+                "endpoint": self.api_base_url or "https://models.github.ai/inference",
+                "token": self.github_token or os.getenv("GITHUB_TOKEN", ""),
+                "model": self.api_model or "meta/Llama-4-Maverick-17B-128E-Instruct-FP8",
+                "timeout": self.api_request_timeout
+            }
         return {}
     
     @classmethod
     def from_env(cls) -> "LlamaConfig":
         """Create configuration from environment variables."""
         return cls(
-            model_path=os.getenv("LLAMA_MODEL_PATH", "../models/llama-4-mevrick"),
+            model_path=os.getenv("LLAMA_MODEL_PATH", "../models/llama-4-maverick"),
             use_gpu=os.getenv("LLAMA_USE_GPU", "True").lower() == "true",
             gpu_layers=int(os.getenv("LLAMA_GPU_LAYERS", "32")),
-            num_threads=int(os.getenv("LLAMA_NUM_THREADS", "4")),
             # API settings
-            use_api=os.getenv("LLAMA_USE_API", "False").lower() == "true",
-            api_provider=os.getenv("LLAMA_API_PROVIDER", "local"),
+            use_api=os.getenv("LLAMA_USE_API", "True").lower() == "true",  # Default to True
+            api_provider=os.getenv("LLAMA_API_PROVIDER", "github"),  # Default to github
             api_key=os.getenv("GROQ_API_KEY") or os.getenv("OPENROUTER_API_KEY"),
-            api_model=os.getenv("LLAMA_API_MODEL", "llama-4-maverick")
+            github_token=os.getenv("GITHUB_TOKEN"),
+            api_model=os.getenv("LLAMA_API_MODEL", "meta/Llama-4-Maverick-17B-128E-Instruct-FP8")
         )

@@ -882,14 +882,143 @@ class ATSScorer:
 
 class ResumeOptimizer:
     """
-    Class for optimizing resumes based on job descriptions.
+    Class for optimizing resumes based on job descriptions using AI.
     """
     
-    def __init__(self, llama_config: Optional[LlamaConfig] = None):
-        """Initialize the ResumeOptimizer."""
-        self.scorer = ATSScorer()
-        self.resume_generator = ResumeGenerator(llama_config)
+    def __init__(self, llama_config=None):
+        """
+        Initialize the ResumeOptimizer with configuration settings.
         
+        Args:
+            llama_config: Configuration settings for LLM integration.
+                         If None, default settings will be used.
+        """
+        # Try to use the provided config or create a default one
+        if llama_config:
+            self.llama_config = llama_config
+        else:
+            try:
+                from config.llama_config import LlamaConfig
+                self.llama_config = LlamaConfig()
+            except ImportError:
+                logger.warning("LlamaConfig not found, using basic configuration")
+                # Create a minimal compatible object with required attributes
+                from types import SimpleNamespace
+                self.llama_config = SimpleNamespace(
+                    use_api=True, 
+                    api_provider="github",
+                    github_token=os.getenv("GITHUB_TOKEN", ""),
+                    api_model="meta/Llama-4-Maverick-17B-128E-Instruct-FP8"
+                )
+                
+        # Initialize components
+        self.scorer = ATSScorer()
+        self.llm_client = self._setup_llm_client()
+        
+    def _setup_llm_client(self):
+        """
+        Set up the LLM client based on configuration.
+        
+        Returns:
+            LLM client instance or None if not available
+        """
+        # Check if we should use API-based LLM
+        use_api = getattr(self.llama_config, 'use_api', True)  # Default to True if not present
+        
+        if not use_api:
+            # Local model logic (not implemented)
+            logger.warning("Local model usage not fully implemented - falling back to templates")
+            return None
+            
+        try:
+            # Determine which API provider to use
+            api_provider = getattr(self.llama_config, 'api_provider', 
+                                  getattr(self.llama_config, 'provider', 'openai'))
+                                  
+            if api_provider == "github":
+                # Use GitHub token-based authentication with Azure AI SDK
+                token = getattr(self.llama_config, 'github_token', os.environ.get("GITHUB_TOKEN"))
+                if not token:
+                    logger.warning("No GitHub token provided - LLM generation not available")
+                    return None
+                    
+                return ChatCompletionsClient(
+                    endpoint="https://models.github.ai/inference",
+                    credential=AzureKeyCredential(token)
+                )
+                
+            elif api_provider in ("groq", "openrouter", "openai"):
+                # For other providers, return None for now
+                # Future: implement other API clients
+                logger.warning(f"{api_provider} integration not fully implemented - falling back to templates")
+                return None
+                
+            else:
+                logger.warning(f"Unknown API provider: {api_provider}")
+                return None
+                
+        except Exception as e:
+            logger.error(f"Error setting up LLM client: {e}")
+            return None
+    
+    def get_llm_response(self, system_prompt: str, user_prompt: str) -> str:
+        """
+        Get a response from the LLM.
+        
+        Args:
+            system_prompt: System message for the LLM
+            user_prompt: User message for the LLM
+            
+        Returns:
+            Generated text response
+        """
+        if not self.llm_client:
+            logger.warning("LLM client not properly set up - cannot generate response")
+            return ""
+            
+        try:
+            # Check the structure of llm_client to handle different formats
+            if isinstance(self.llm_client, dict) and "client" in self.llm_client and "model" in self.llm_client:
+                # This is the format used with GitHub token
+                client = self.llm_client["client"]
+                model = self.llm_client["model"]
+                
+                from azure.ai.inference.models import SystemMessage, UserMessage
+                
+                logger.info(f"Sending request to LLM (model: {model})")
+                response = client.complete(
+                    messages=[
+                        SystemMessage(system_prompt),
+                        UserMessage(user_prompt),
+                    ],
+                    temperature=getattr(self.llama_config, 'temperature', 0.7),
+                    top_p=getattr(self.llama_config, 'top_p', 0.9),
+                    max_tokens=getattr(self.llama_config, 'max_tokens', 1000),
+                    model=model
+                )
+                
+                result = response.choices[0].message.content
+                
+            elif hasattr(self.llm_client, 'complete'):
+                # Direct client with complete method
+                logger.info("Sending request to direct LLM client")
+                response = self.llm_client.complete(
+                    system_prompt=system_prompt,
+                    prompt=user_prompt,
+                    temperature=getattr(self.llama_config, 'temperature', 0.7),
+                    max_tokens=getattr(self.llama_config, 'max_tokens', 1000)
+                )
+                result = response.text if hasattr(response, 'text') else str(response)
+            else:
+                logger.error("Unknown LLM client format")
+                return ""
+            
+            logger.info(f"Received {len(result)} characters from LLM")
+            return result
+        except Exception as e:
+            logger.error(f"Error getting LLM response: {e}")
+            return ""
+            
     def optimize_resume(self, 
                      resume_path: str, 
                      job_description: str,
@@ -1021,11 +1150,17 @@ class ResumeOptimizer:
         Use the same format and structure as the current resume.
         """
         
-        # Generate the resume content
-        result = self.resume_generator._generate_text(
-            prompt=prompt,
-            system_prompt="You are an expert resume optimizer that makes resumes score higher on ATS systems."
-        )
+        system_prompt = "You are an expert resume optimizer that makes resumes score higher on ATS systems."
+        
+        # Try using our direct LLM integration first
+        if self.llm_client:
+            result = self.get_llm_response(system_prompt, prompt)
+        else:
+            # Fall back to resume generator if direct integration isn't available
+            result = self.resume_generator._generate_text(
+                prompt=prompt,
+                system_prompt=system_prompt
+            )
         
         # Parse the generated content
         optimized_data = self._parse_generated_resume(result, resume_data)

@@ -20,6 +20,7 @@ from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_excep
 import sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from config.linkedin_mcp_config import LinkedInMCPConfig
+from config.config import LinkedInConfig
 
 # Import the compatibility module for LinkedIn MCP
 from src.linkedin_mcp_compat import create_linkedin_mcp, is_linkedin_mcp_available
@@ -96,7 +97,7 @@ class LinkedInIntegration:
     and application submission.
     """
 
-    def __init__(self, config: Optional[LinkedInMCPConfig] = None):
+    def __init__(self, config: Optional[Union[LinkedInMCPConfig, LinkedInConfig]] = None):
         """
         Initialize the LinkedInIntegration with configuration settings.
         
@@ -104,7 +105,27 @@ class LinkedInIntegration:
             config: Configuration settings for LinkedIn integration.
                    If None, default settings will be used.
         """
-        self.config = config or LinkedInMCPConfig()
+        # Handle different config types - either LinkedInMCPConfig or LinkedInConfig
+        if isinstance(config, LinkedInConfig):
+            # Convert from general config to MCP config
+            self.config = LinkedInMCPConfig(
+                client_id=config.client_id.get_secret_value() if hasattr(config.client_id, 'get_secret_value') else config.client_id,
+                client_secret=config.client_secret.get_secret_value() if hasattr(config.client_secret, 'get_secret_value') else config.client_secret,
+                redirect_uri=config.redirect_uri
+            )
+            # Use session_path or session_storage_path from LinkedInConfig
+            if hasattr(config, 'session_storage_path'):
+                self.config.session_storage_path = config.session_storage_path
+            elif hasattr(config, 'session_path'):
+                self.config.session_storage_path = config.session_path
+        else:
+            # Use the provided MCP config or create a default one
+            self.config = config or LinkedInMCPConfig()
+
+        # Create necessary directories
+        self.config.session_storage_path = os.path.join(project_root, "data", "sessions")
+        os.makedirs(self.config.session_storage_path, exist_ok=True)
+        
         self._setup_mcp_server()
         self.access_token = None
         self.token_expiry = None

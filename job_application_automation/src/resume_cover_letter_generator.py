@@ -20,8 +20,10 @@ from docxtpl import DocxTemplate
 from docx import Document
 from docx.shared import Pt, Inches
 
-# AI/LLM integration
-# from llama_cpp import Llama  # type: ignore
+# Azure AI integration for GitHub token-based Llama 4 access
+from azure.ai.inference import ChatCompletionsClient
+from azure.ai.inference.models import SystemMessage, UserMessage
+from azure.core.credentials import AzureKeyCredential
 
 # Import configuration
 import sys
@@ -297,6 +299,7 @@ class ResumeGenerator:
         self.template_manager = CoverLetterTemplateManager()
         self.llm_available = False
         self.api_available = False
+        self.github_client = None
         
     def _setup_llm(self) -> None:
         """Set up the LLM for resume and cover letter generation."""
@@ -310,11 +313,16 @@ class ResumeGenerator:
             os.makedirs(output_dir, exist_ok=True)
             
             # First check if API is available
-            if self.config.use_api:
+            if hasattr(self.config, 'use_api') and self.config.use_api:
                 api_config = self.config.get_api_config()
                 if api_config:
-                    self.api_available = self._test_api_connection(api_config)
-                    if self.api_available:
+                    if self.config.api_provider == "github":
+                        # Set up GitHub token-based Llama 4 client
+                        self._setup_github_llama4_client(api_config)
+                    else:
+                        self.api_available = self._test_api_connection(api_config)
+                        
+                    if self.api_available or self.github_client:
                         logger.info(f"Successfully connected to {self.config.api_provider} API")
                         self.llm_available = False  # Use API instead of local model
                         return
@@ -376,6 +384,28 @@ class ResumeGenerator:
             logger.warning(f"Error setting up LLM: {e} - will use template-based generation instead")
             self.llm_available = False
     
+    def _setup_github_llama4_client(self, api_config: Dict[str, Any]) -> None:
+        """Set up GitHub token-based Llama 4 client."""
+        try:
+            endpoint = api_config.get("endpoint", "https://models.github.ai/inference")
+            token = api_config.get("token")
+            model = api_config.get("model", "meta/Llama-4-Maverick-17B-128E-Instruct-FP8")
+            
+            if not token:
+                logger.error("GitHub token not found. Unable to set up GitHub-based Llama 4 client.")
+                return
+                
+            self.github_client = ChatCompletionsClient(
+                endpoint=endpoint,
+                credential=AzureKeyCredential(token),
+            )
+            
+            logger.info(f"GitHub-based Llama 4 client initialized successfully with model {model}")
+            self.api_available = True
+        except Exception as e:
+            logger.error(f"Error setting up GitHub Llama 4 client: {e}")
+            self.github_client = None
+    
     def _test_api_connection(self, api_config: Dict[str, Any]) -> bool:
         """Test connection to the API provider."""
         try:
@@ -426,10 +456,43 @@ class ResumeGenerator:
         """Generate text using the API."""
         api_config = self.config.get_api_config()
         
-        if not api_config or not self.api_available:
+        if not api_config:
+            logger.error("API config not available for text generation")
+            return "API error: Could not generate text."
+            
+        # If using GitHub-based Llama 4
+        if self.github_client and self.config.api_provider == "github":
+            try:
+                model = api_config.get("model", "meta/Llama-4-Maverick-17B-128E-Instruct-FP8")
+                
+                # Prepare the messages for chat completion
+                messages = [
+                    SystemMessage("You are a helpful assistant specialized in writing professional resumes and cover letters."),
+                    UserMessage(prompt),
+                ]
+                
+                # Call the GitHub-hosted Llama 4 model
+                response = self.github_client.complete(
+                    messages=messages,
+                    temperature=self.config.temperature,
+                    top_p=self.config.top_p,
+                    max_tokens=min(4000, self.config.context_length),
+                    model=model
+                )
+                
+                generated_text = response.choices[0].message.content
+                logger.info("Successfully generated text using GitHub-based Llama 4")
+                return generated_text
+                
+            except Exception as e:
+                logger.error(f"Error generating text with GitHub-based Llama 4: {e}")
+                return f"GitHub API error: {str(e)}"
+        
+        # For other API providers (existing code)
+        if not self.api_available:
             logger.error("API not available for text generation")
             return "API error: Could not generate text."
-        
+            
         try:
             api_base = api_config.get("api_base", "")
             api_key = api_config.get("api_key", "")

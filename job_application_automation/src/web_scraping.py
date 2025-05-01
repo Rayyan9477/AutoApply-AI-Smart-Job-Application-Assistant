@@ -52,16 +52,67 @@ class JobDetailsScraper:
         """
         self.config = config or Crawl4AIConfig()
         
-    async def scrape_job_details(self, job_listings: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    async def scrape_job_details(self, job_listings_or_url: Union[List[Dict[str, Any]], str]) -> Union[List[Dict[str, Any]], Dict[str, Any]]:
         """
         Scrape job descriptions using HTTPX and BeautifulSoup.
+        
+        Args:
+            job_listings_or_url: Either a list of job listings or a single job URL
+            
+        Returns:
+            Either a list of job details or a single job detail dictionary
         """
-        if not job_listings:
+        # Handle single URL case
+        if isinstance(job_listings_or_url, str):
+            url = job_listings_or_url
+            try:
+                async with httpx.AsyncClient() as client:
+                    resp = await client.get(url, timeout=self.config.request_timeout)
+                    resp.raise_for_status()
+                    soup = BeautifulSoup(resp.text, 'lxml')
+                    
+                    # Extract job details from the page
+                    job_description = ""
+                    description_elements = soup.select('.job-description, .description, [data-testid="jobDescriptionText"]')
+                    
+                    if description_elements:
+                        for elem in description_elements:
+                            job_description += elem.get_text(separator=' ', strip=True)
+                    else:
+                        # Fallback: get all paragraphs if no specific job description container found
+                        job_description = ' '.join(p.get_text(separator=' ', strip=True) for p in soup.find_all('p'))
+                    
+                    # Extract job title
+                    job_title_elem = soup.select_one('h1.job-title, h1.title, [data-testid="jobTitle"]')
+                    job_title = job_title_elem.get_text(strip=True) if job_title_elem else "Unknown Position"
+                    
+                    # Extract company name
+                    company_elem = soup.select_one('.company-name, .employer, [data-testid="companyName"]')
+                    company = company_elem.get_text(strip=True) if company_elem else "Unknown Company"
+                    
+                    # Extract location
+                    location_elem = soup.select_one('.location, [data-testid="jobLocationText"]')
+                    location = location_elem.get_text(strip=True) if location_elem else "Unknown Location"
+                    
+                    return {
+                        "job_title": job_title,
+                        "company": company,
+                        "location": location,
+                        "job_description": job_description,
+                        "url": url
+                    }
+            except Exception as e:
+                logger.error(f"Error scraping {url}: {e}")
+                return {}
+        
+        # Handle list of job listings
+        if not job_listings_or_url:
             logger.warning("No job listings provided for scraping")
             return []
+            
         job_details = []
         async with httpx.AsyncClient() as client:
-            for listing in job_listings:
+            for listing in job_listings_or_url:
                 url = listing.get("url")
                 if not url:
                     continue
@@ -69,8 +120,19 @@ class JobDetailsScraper:
                     resp = await client.get(url, timeout=self.config.request_timeout)
                     resp.raise_for_status()
                     soup = BeautifulSoup(resp.text, 'lxml')
-                    text = ' '.join(p.get_text(separator=' ', strip=True) for p in soup.find_all('p'))
-                    detail = {**listing, "job_description": text}
+                    
+                    # Extract job description from the page
+                    job_description = ""
+                    description_elements = soup.select('.job-description, .description, [data-testid="jobDescriptionText"]')
+                    
+                    if description_elements:
+                        for elem in description_elements:
+                            job_description += elem.get_text(separator=' ', strip=True)
+                    else:
+                        # Fallback: get all paragraphs if no specific job description container found
+                        job_description = ' '.join(p.get_text(separator=' ', strip=True) for p in soup.find_all('p'))
+                    
+                    detail = {**listing, "job_description": job_description}
                     job_details.append(detail)
                     logger.info(f"Scraped job description from {url}")
                 except Exception as e:

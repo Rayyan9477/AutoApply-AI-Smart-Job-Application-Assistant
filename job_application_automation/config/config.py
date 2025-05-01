@@ -90,6 +90,7 @@ class LinkedInConfig(BaseModel):
         description="OAuth redirect URI"
     )
     session_path: str = Field(default="../data/sessions", description="Path to store session data")
+    session_storage_path: str = Field(default="../data/sessions", description="Path to store session data (compat)")
     use_api: bool = Field(default=True, description="Whether to use LinkedIn API")
     use_mcp: bool = Field(default=True, description="Whether to use LinkedIn MCP")
     
@@ -127,6 +128,13 @@ class LLMConfig(BaseModel):
     temperature: float = Field(default=0.7, description="Temperature for generation")
     max_tokens: int = Field(default=4000, description="Maximum tokens per request")
     
+    # Additional fields for compatibility with LlamaConfig
+    use_api: bool = Field(default=True, description="Whether to use API for LLM integration")
+    api_provider: str = Field(default="github", description="API provider for LLM")
+    api_base_url: Optional[str] = Field(default=None, description="Base URL for API")
+    api_model: Optional[str] = Field(default=None, description="Model name for API")
+    github_token: Optional[str] = Field(default=None, description="GitHub token for API access")
+    
     @validator('temperature')
     def validate_temperature(cls, v):
         """Validate temperature."""
@@ -138,7 +146,7 @@ class LLMConfig(BaseModel):
     class Config:
         """Pydantic configuration."""
         # These fields contain sensitive information
-        sensitive_fields = {'api_key'}
+        sensitive_fields = {'api_key', 'github_token'}
 
 class SecurityConfig(BaseModel):
     """Security-related configuration."""
@@ -354,7 +362,7 @@ class ConfigManager:
         
         # Look for environment variables with the proper prefix
         for env_var, value in os.environ.items():
-            if env_var.startswith(self.ENV_PREFIX):
+            if (env_var.startswith(self.ENV_PREFIX)):
                 # Remove prefix and split by double underscore
                 key_path = env_var[len(self.ENV_PREFIX):].split('__')
                 
