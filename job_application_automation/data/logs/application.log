@@ -204,3 +204,54 @@ Call log:
 2025-05-01 06:33:22,272 - src.browser_automation - WARNING - Login timeout reached. Current URL: https://www.linkedin.com/login
 2025-05-01 06:33:22,489 - linkedin_integration - WARNING - Manual LinkedIn authentication failed
 2025-05-01 06:33:22,489 - __main__ - WARNING - LinkedIn authentication failed, some features may not be available
+2025-05-01 11:08:42,259 - browser_automation - INFO - Browser initialized with chromium
+2025-05-01 11:08:42,262 - linkedin_integration - INFO - LinkedIn MCP API credentials not configured - using cookie-based authentication instead
+2025-05-01 11:08:42,262 - resume_cover_letter_generator - WARNING - Error setting up LLM: 'LLMConfig' object has no attribute 'get_api_config' - will use template-based generation instead
+2025-05-01 11:08:42,263 - src.resume_optimizer - INFO - Loading sentence transformer model...
+2025-05-01 11:08:42,267 - sentence_transformers.SentenceTransformer - INFO - Use pytorch device_name: cpu
+2025-05-01 11:08:42,268 - sentence_transformers.SentenceTransformer - INFO - Load pretrained SentenceTransformer: all-MiniLM-L6-v2
+2025-05-01 11:08:50,028 - src.resume_optimizer - INFO - Successfully loaded sentence transformer model with dimension 384
+2025-05-01 11:08:50,031 - src.resume_optimizer - INFO - FAISS vector index initialized for ATS scoring
+2025-05-01 11:08:50,032 - src.resume_optimizer - INFO - Loading sentence transformer model...
+2025-05-01 11:08:50,037 - sentence_transformers.SentenceTransformer - INFO - Use pytorch device_name: cpu
+2025-05-01 11:08:50,037 - sentence_transformers.SentenceTransformer - INFO - Load pretrained SentenceTransformer: all-MiniLM-L6-v2
+2025-05-01 11:08:52,916 - src.resume_optimizer - INFO - Successfully loaded sentence transformer model with dimension 384
+2025-05-01 11:08:52,916 - src.resume_optimizer - INFO - FAISS vector index initialized for ATS scoring
+2025-05-01 11:08:52,917 - src.resume_optimizer - WARNING - No GitHub token provided - LLM generation not available
+2025-05-01 11:08:52,917 - ats_integration - INFO - Setting up Llama 4 with GitHub token
+2025-05-01 11:08:52,918 - ats_integration - ERROR - GitHub token not found. Set GITHUB_TOKEN environment variable.
+2025-05-01 11:08:52,935 - ats_integration - INFO - ATS state loaded successfully
+2025-05-01 11:08:52,936 - __main__ - INFO - Job Application Automation initialized
+2025-05-01 11:08:52,951 - __main__ - INFO - Loaded candidate profile from file
+2025-05-01 11:08:52,953 - linkedin_integration - INFO - Found saved LinkedIn cookies, attempting to use them
+2025-05-01 11:08:52,956 - src.browser_automation - INFO - Browser initialized with chromium
+2025-05-01 11:08:59,821 - src.browser_automation - INFO - Loaded cookies from C:\Users\rayyan.a\PycharmProjects\linkedin\job_application_automation\data\sessions\linkedin_cookies.json
+2025-05-01 11:09:34,769 - src.browser_automation - INFO - Successfully authenticated using LinkedIn cookies
+2025-05-01 11:09:35,897 - linkedin_integration - INFO - Successfully authenticated with LinkedIn using saved cookies
+2025-05-01 11:09:35,898 - __main__ - INFO - Searching for jobs on LinkedIn with keywords ['software engineer', 'python'] in Remote
+2025-05-01 11:09:35,899 - src.browser_automation - INFO - Browser initialized with chromium
+2025-05-01 11:09:35,899 - linkedin_integration - INFO - Searching LinkedIn for jobs: software engineer python in Remote (attempt 1)
+2025-05-01 11:09:37,947 - src.browser_automation - INFO - Navigated to https://www.linkedin.com/jobs/
+2025-05-01 11:09:37,949 - src.browser_automation - ERROR - Error searching LinkedIn: object NoneType can't be used in 'await' expression
+2025-05-01 11:09:38,630 - src.browser_automation - INFO - Saved error screenshot to ../data/screenshots\linkedin_error.png
+2025-05-01 11:09:38,732 - src.browser_automation - INFO - Saved 0 job listings to C:\Users\rayyan.a\PycharmProjects\linkedin\job_application_automation\data\job_listings.json
+2025-05-01 11:09:38,733 - linkedin_integration - WARNING - No results found on attempt 1. Retrying...
+2025-05-01 11:09:40,738 - linkedin_integration - INFO - Searching LinkedIn for jobs: software engineer python in None (attempt 2)
+2025-05-01 11:09:42,405 - src.browser_automation - INFO - Navigated to https://www.linkedin.com/jobs/
+2025-05-01 11:09:42,408 - src.browser_automation - ERROR - Error searching LinkedIn: object NoneType can't be used in 'await' expression
+2025-05-01 11:09:42,893 - src.browser_automation - INFO - Saved error screenshot to ../data/screenshots\linkedin_error.png
+2025-05-01 11:09:42,992 - src.browser_automation - INFO - Saved 0 job listings to C:\Users\rayyan.a\PycharmProjects\linkedin\job_application_automation\data\job_listings.json
+2025-05-01 11:09:42,994 - linkedin_integration - WARNING - No results found on attempt 2. Retrying...
+2025-05-01 11:09:47,008 - linkedin_integration - INFO - Searching LinkedIn for jobs: software engineer in None (attempt 3)
+2025-05-01 11:09:48,423 - src.browser_automation - INFO - Navigated to https://www.linkedin.com/jobs/
+2025-05-01 11:09:48,427 - src.browser_automation - ERROR - Error searching LinkedIn: object NoneType can't be used in 'await' expression
+2025-05-01 11:09:48,849 - src.browser_automation - INFO - Saved error screenshot to ../data/screenshots\linkedin_error.png
+2025-05-01 11:09:48,927 - src.browser_automation - INFO - Saved 0 job listings to C:\Users\rayyan.a\PycharmProjects\linkedin\job_application_automation\data\job_listings.json
+2025-05-01 11:09:48,933 - linkedin_integration - WARNING - No results found on attempt 3. Retrying...
+2025-05-01 11:09:56,933 - linkedin_integration - INFO - Saved 0 LinkedIn job listings to ../data/linkedin_job_listings.json
+2025-05-01 11:09:56,933 - linkedin_integration - INFO - Found 0 jobs on LinkedIn
+2025-05-01 11:09:56,935 - __main__ - INFO - Found 0 jobs on LinkedIn
+2025-05-01 11:09:56,935 - __main__ - INFO - Searching for jobs on linkedin with keywords ['software engineer', 'python'] in Remote
+2025-05-01 11:09:56,935 - __main__ - ERROR - Error searching jobs with browser automation: 'BrowserConfig' object has no attribute 'job_sites'
+2025-05-01 11:09:56,937 - __main__ - INFO - Saved 0 combined job listings
+2025-05-01 11:09:56,937 - __main__ - ERROR - No job listings found

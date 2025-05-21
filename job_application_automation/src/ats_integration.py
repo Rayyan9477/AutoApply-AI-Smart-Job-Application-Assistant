@@ -71,9 +71,9 @@ class LLMConfigAdapter:
         # Otherwise, provide compatibility defaults based on attribute name
         defaults = {
             'use_api': True,
-            'api_provider': getattr(self.config, 'provider', 'openai'),
+            'api_provider': getattr(self.config, 'provider', 'github'),  # Default to github
             'api_key': getattr(self.config, 'api_key', None),
-            'github_token': os.environ.get("GITHUB_TOKEN", None),
+            'github_token': getattr(self.config, 'github_token', os.getenv("GITHUB_TOKEN")),
             'api_model': getattr(self.config, 'model', 'meta/Llama-4-Maverick-17B-128E-Instruct-FP8'),
             'temperature': getattr(self.config, 'temperature', 0.7),
             'top_p': getattr(self.config, 'top_p', 0.9),
@@ -102,12 +102,12 @@ class LLMConfigAdapter:
             return self.config.get_api_config()
             
         # Otherwise, create API config based on provider
-        provider = getattr(self.config, 'provider', getattr(self.config, 'api_provider', 'openai'))
+        provider = getattr(self.config, 'provider', getattr(self.config, 'api_provider', 'github'))
         
         if provider == 'github':
             return {
                 "endpoint": getattr(self.config, 'api_base_url', "https://models.github.ai/inference"),
-                "token": getattr(self.config, 'github_token', os.environ.get("GITHUB_TOKEN", "")),
+                "token": getattr(self.config, 'github_token', os.getenv("GITHUB_TOKEN")),
                 "model": getattr(self.config, 'api_model', getattr(self.config, 'model', "meta/Llama-4-Maverick-17B-128E-Instruct-FP8")),
                 "timeout": getattr(self.config, 'api_request_timeout', 60)
             }

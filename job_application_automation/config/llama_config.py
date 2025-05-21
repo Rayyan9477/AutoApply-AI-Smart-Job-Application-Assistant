@@ -2,7 +2,7 @@
 Configuration settings for LLM integration using Llama 4 Maverick.
 """
 import os
-from pydantic import BaseModel, SecretStr
+from pydantic import BaseModel, SecretStr, Field
 from typing import Dict, List, Optional, Literal, Union, Any
 from dotenv import load_dotenv
 
@@ -21,7 +21,7 @@ class LlamaConfig(BaseModel):
     api_request_timeout: int = 60  # Seconds
     
     # GitHub token for Llama 4 access
-    github_token: Optional[str] = None
+    github_token: Optional[str] = Field(default_factory=lambda: os.getenv("GITHUB_TOKEN"))
     
     # Model settings
     model_path: str = "../models/llama-4-maverick"
@@ -211,6 +211,15 @@ class LlamaConfig(BaseModel):
                 "timeout": self.api_request_timeout
             }
         return {}
+    
+    def __init__(self, **data):
+        """Initialize configuration and ensure environment variables are loaded."""
+        # Load environment variables first
+        load_dotenv()
+        # If github_token not provided in data, try to get it from environment
+        if "github_token" not in data:
+            data["github_token"] = os.getenv("GITHUB_TOKEN")
+        super().__init__(**data)
     
     @classmethod
     def from_env(cls) -> "LlamaConfig":

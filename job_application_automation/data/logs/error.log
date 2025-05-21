@@ -19,3 +19,9 @@
 Call log:
   - navigating to "https://www.linkedin.com/feed/", waiting until "load"
 
+2025-05-01 11:08:52,918 - ats_integration - ERROR - GitHub token not found. Set GITHUB_TOKEN environment variable.
+2025-05-01 11:09:37,949 - src.browser_automation - ERROR - Error searching LinkedIn: object NoneType can't be used in 'await' expression
+2025-05-01 11:09:42,408 - src.browser_automation - ERROR - Error searching LinkedIn: object NoneType can't be used in 'await' expression
+2025-05-01 11:09:48,427 - src.browser_automation - ERROR - Error searching LinkedIn: object NoneType can't be used in 'await' expression
+2025-05-01 11:09:56,935 - __main__ - ERROR - Error searching jobs with browser automation: 'BrowserConfig' object has no attribute 'job_sites'
+2025-05-01 11:09:56,937 - __main__ - ERROR - No job listings found
