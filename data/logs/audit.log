@@ -55,3 +55,12 @@
 {"asctime": "2025-04-27 22:53:00", "name": "__main__", "levelname": "INFO", "message": "Found 0 jobs through browser automation", "taskName": "Task-1"}
 {"asctime": "2025-04-27 22:53:00", "name": "__main__", "levelname": "INFO", "message": "Saved 0 combined job listings", "taskName": "Task-1"}
 {"asctime": "2025-04-27 22:53:00", "name": "__main__", "levelname": "ERROR", "message": "No job listings found", "taskName": "Task-1"}
+{"asctime": "2025-06-17 09:56:43", "name": "src.linkedin_mcp_compat", "levelname": "WARNING", "message": "LinkedIn MCP module not found. Using mock implementation.", "taskName": null}
+{"asctime": "2025-06-17 09:58:44", "name": "src.linkedin_mcp_compat", "levelname": "WARNING", "message": "LinkedIn MCP module not found. Using mock implementation.", "taskName": null}
+{"asctime": "2025-06-17 10:56:16", "name": "src.linkedin_mcp_compat", "levelname": "WARNING", "message": "LinkedIn MCP module not found. Using mock implementation.", "taskName": null}
+{"asctime": "2025-06-17 11:13:16", "name": "src.linkedin_mcp_compat", "levelname": "WARNING", "message": "LinkedIn MCP module not found. Using mock implementation.", "taskName": null}
+{"asctime": "2025-06-18 04:13:01", "name": "src.linkedin_mcp_compat", "levelname": "WARNING", "message": "LinkedIn MCP module not found. Using mock implementation.", "taskName": null}
+{"asctime": "2025-06-18 04:14:16", "name": "src.linkedin_mcp_compat", "levelname": "WARNING", "message": "LinkedIn MCP module not found. Using mock implementation.", "taskName": null}
+{"asctime": "2025-06-18 04:32:09", "name": "src.linkedin_mcp_compat", "levelname": "WARNING", "message": "LinkedIn MCP module not found. Using mock implementation.", "taskName": null}
+{"asctime": "2025-06-18 04:33:52", "name": "src.linkedin_mcp_compat", "levelname": "WARNING", "message": "LinkedIn MCP module not found. Using mock implementation.", "taskName": null}
+{"asctime": "2025-06-18 04:36:12", "name": "src.linkedin_mcp_compat", "levelname": "WARNING", "message": "LinkedIn MCP module not found. Using mock implementation.", "taskName": null}

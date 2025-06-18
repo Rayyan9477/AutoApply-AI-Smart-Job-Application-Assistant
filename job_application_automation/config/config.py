@@ -122,31 +122,64 @@ class CrawlConfig(BaseModel):
 
 class LLMConfig(BaseModel):
     """Configuration for LLM services."""
-    provider: str = Field(default="openai", description="LLM provider")
+    provider: str = Field(default="gemini", description="LLM provider (gemini, openai, etc.)")
     api_key: SecretStr = Field(default=SecretStr(""), description="API key for LLM service")
-    model: str = Field(default="gpt-4", description="Model to use")
-    temperature: float = Field(default=0.7, description="Temperature for generation")
+    model: str = Field(default="gemini-pro", description="Model to use")
+    temperature: float = Field(default=0.7, description="Temperature for generation (0-1)")
     max_tokens: int = Field(default=4000, description="Maximum tokens per request")
+    top_p: float = Field(default=0.95, description="Nucleus sampling parameter (0-1)")
+    top_k: int = Field(default=40, description="Top-k sampling parameter")
     
-    # Additional fields for compatibility with LlamaConfig
+    # Gemini-specific settings
+    safety_settings: Dict[str, str] = Field(
+        default_factory=lambda: {
+            "HARM_CATEGORY_HARASSMENT": "BLOCK_NONE",
+            "HARM_CATEGORY_HATE_SPEECH": "BLOCK_NONE",
+            "HARM_CATEGORY_SEXUALLY_EXPLICIT": "BLOCK_NONE",
+            "HARM_CATEGORY_DANGEROUS_CONTENT": "BLOCK_NONE"
+        },
+        description="Safety settings for Gemini model"
+    )
+    
+    # Provider-specific settings
+    openai_model: str = Field(default="gpt-4", description="OpenAI model to use")
+    gemini_model: str = Field(default="gemini-pro", description="Gemini model to use")
+    
+    # API configuration
     use_api: bool = Field(default=True, description="Whether to use API for LLM integration")
-    api_provider: str = Field(default="github", description="API provider for LLM")
-    api_base_url: Optional[str] = Field(default=None, description="Base URL for API")
-    api_model: Optional[str] = Field(default=None, description="Model name for API")
-    github_token: Optional[str] = Field(default=None, description="GitHub token for API access")
+    api_base_url: Optional[str] = Field(
+        default="https://generativelanguage.googleapis.com/v1beta",
+        description="Base URL for API"
+    )
     
     @validator('temperature')
     def validate_temperature(cls, v):
-        """Validate temperature."""
-        if v < 0 or v > 1:
-            logger.warning(f"Invalid temperature: {v}. Using default: 0.7")
-            return 0.7
+        """Validate temperature is between 0 and 1."""
+        if not 0 <= v <= 1:
+            logger.warning(f"Temperature {v} is outside recommended range [0, 1]. Clamping to nearest valid value.")
+            return max(0, min(1, v))
+        return v
+        
+    @validator('top_p')
+    def validate_top_p(cls, v):
+        """Validate top_p is between 0 and 1."""
+        if not 0 <= v <= 1:
+            logger.warning(f"top_p {v} is outside valid range [0, 1]. Clamping to nearest valid value.")
+            return max(0, min(1, v))
+        return v
+        
+    @validator('top_k')
+    def validate_top_k(cls, v):
+        """Validate top_k is at least 1."""
+        if v < 1:
+            logger.warning(f"top_k must be at least 1, got {v}. Setting to 1.")
+            return 1
         return v
     
     class Config:
         """Pydantic configuration."""
         # These fields contain sensitive information
-        sensitive_fields = {'api_key', 'github_token'}
+        sensitive_fields = {'api_key'}
 
 class SecurityConfig(BaseModel):
     """Security-related configuration."""

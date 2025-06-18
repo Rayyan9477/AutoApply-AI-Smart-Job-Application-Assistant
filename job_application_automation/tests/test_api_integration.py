@@ -94,8 +94,8 @@ def test_text_generation():
     
     return generated_text
 
-def main():
-    """Main function to run the tests."""
+def test_main():
+    """Main test function to run the tests."""
     print("\n===== TESTING API INTEGRATION =====\n")
     
     # Test API connection
@@ -112,6 +112,3 @@ def main():
         print("4. Run this script again\n")
         
     print("===== API INTEGRATION TEST COMPLETE =====")
-
-if __name__ == "__main__":
-    main()

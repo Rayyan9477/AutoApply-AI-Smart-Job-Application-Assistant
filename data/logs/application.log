@@ -57,3 +57,12 @@ If this is a private repository, make sure to pass a token having permission to 
 2025-04-27 22:53:00,394 - __main__ - INFO - Found 0 jobs through browser automation
 2025-04-27 22:53:00,397 - __main__ - INFO - Saved 0 combined job listings
 2025-04-27 22:53:00,398 - __main__ - ERROR - No job listings found
+2025-06-17 09:56:43,014 - src.linkedin_mcp_compat - WARNING - LinkedIn MCP module not found. Using mock implementation.
+2025-06-17 09:58:44,892 - src.linkedin_mcp_compat - WARNING - LinkedIn MCP module not found. Using mock implementation.
+2025-06-17 10:56:16,241 - src.linkedin_mcp_compat - WARNING - LinkedIn MCP module not found. Using mock implementation.
+2025-06-17 11:13:16,185 - src.linkedin_mcp_compat - WARNING - LinkedIn MCP module not found. Using mock implementation.
+2025-06-18 04:13:01,326 - src.linkedin_mcp_compat - WARNING - LinkedIn MCP module not found. Using mock implementation.
+2025-06-18 04:14:16,466 - src.linkedin_mcp_compat - WARNING - LinkedIn MCP module not found. Using mock implementation.
+2025-06-18 04:32:09,339 - src.linkedin_mcp_compat - WARNING - LinkedIn MCP module not found. Using mock implementation.
+2025-06-18 04:33:52,437 - src.linkedin_mcp_compat - WARNING - LinkedIn MCP module not found. Using mock implementation.
+2025-06-18 04:36:12,189 - src.linkedin_mcp_compat - WARNING - LinkedIn MCP module not found. Using mock implementation.

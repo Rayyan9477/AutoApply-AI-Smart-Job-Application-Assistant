@@ -13,16 +13,13 @@ from typing import Dict, Any, List, Optional
 from datetime import datetime
 from tenacity import retry, stop_after_attempt, wait_exponential
 import random
+from pathlib import Path
 
-# Add project root to sys.path before any imports of project modules
-import sys
-import os
-# Define project root path for use throughout the module
-project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, project_root)
-sys.path.insert(0, os.path.join(project_root, 'src'))
+# Import configuration and DI container
+from config.config import get_config
+from di import container, injectable, inject, configure_container
 
-# Import project modules
+# Import interfaces and services
 from browser_automation import JobSearchBrowser
 from web_scraping import JobDetailsScraper
 from linkedin_integration import LinkedInIntegration
@@ -30,13 +27,15 @@ from resume_cover_letter_generator import ResumeGenerator
 from application_tracker import ApplicationTracker
 from ats_integration import ATSIntegrationManager
 
-# Import configuration
-from config.config import get_config
-from pathlib import Path
-
+# Get configuration
 CONFIG = get_config()
 
+# Configure the DI container with application services
+configure_container(CONFIG)
+
+# Get logger
 logger = logging.getLogger(__name__)
+
 # Configure logging based on centralized config
 log_dir = Path(CONFIG.logging.log_dir)
 log_dir.mkdir(parents=True, exist_ok=True)
@@ -49,6 +48,7 @@ if CONFIG.logging.console_logging:
 logger.setLevel(CONFIG.logging.level)
 
 
+@injectable()
 class JobApplicationAutomation:
     """
     Main class for job application automation.
@@ -56,34 +56,30 @@ class JobApplicationAutomation:
     """
 
     def __init__(self,
-            browser_config=None,
-            crawl4ai_config=None,
-            linkedin_config=None,
-            llm_config=None):
+                 job_search_browser: JobSearchBrowser = inject(JobSearchBrowser),
+                 job_details_scraper: JobDetailsScraper = inject(JobDetailsScraper),
+                 linkedin_integration: LinkedInIntegration = inject(LinkedInIntegration),
+                 resume_generator: ResumeGenerator = inject(ResumeGenerator),
+                 ats_manager: ATSIntegrationManager = inject(ATSIntegrationManager),
+                 application_tracker: ApplicationTracker = inject(ApplicationTracker)):
         """
-        Initialize the JobApplicationAutomation with configuration settings.
+        Initialize the JobApplicationAutomation with injected dependencies.
         
         Args:
-            browser_config: Configuration for browser automation.
-            crawl4ai_config: Configuration for web scraping.
-            linkedin_config: Configuration for LinkedIn integration.
-            llm_config: Configuration for LLM integration.
+            job_search_browser: Browser automation service
+            job_details_scraper: Web scraping service
+            linkedin_integration: LinkedIn API integration
+            resume_generator: Resume and cover letter generation service
+            ats_manager: ATS integration manager
+            application_tracker: Application tracking service
         """
-        # Initialize configurations
-        self.browser_config = browser_config or CONFIG.browser
-        self.crawl4ai_config = crawl4ai_config or CONFIG.crawl
-        self.linkedin_config = linkedin_config or CONFIG.linkedin
-        self.llm_config = llm_config or CONFIG.llm
-        
-        # Initialize components
-        self.job_search_browser = JobSearchBrowser(self.browser_config)
-        self.job_details_scraper = JobDetailsScraper(self.crawl4ai_config)
-        self.linkedin_integration = LinkedInIntegration(self.linkedin_config)
-        self.resume_generator = ResumeGenerator(self.llm_config)
-        
-        # Initialize ATS integration
-        self.ats_manager = ATSIntegrationManager(self.llm_config)
-        self.ats_manager.load_state()
+        # Initialize services
+        self.job_search_browser = job_search_browser
+        self.job_details_scraper = job_details_scraper
+        self.linkedin_integration = linkedin_integration
+        self.resume_generator = resume_generator
+        self.ats_manager = ats_manager
+        self.application_tracker = application_tracker
         
         # Application state
         self.job_listings = []
@@ -95,9 +91,6 @@ class JobApplicationAutomation:
         Path(CONFIG.data_dir).mkdir(parents=True, exist_ok=True)
         for sub in ["generated_cover_letters", "ats_reports"]:
             Path(CONFIG.data_dir, sub).mkdir(exist_ok=True)
-        
-        # Initialize application tracker
-        self.application_tracker = ApplicationTracker()
         
         logger.info("Job Application Automation initialized")
         
