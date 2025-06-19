@@ -158,5 +158,10 @@ class AuditLogger:
                           extra={"event_type": f"security.{event_type}", **details})
 
 
+class LoggingConfig:
+    """Stub LoggingConfig for compatibility. Replace with actual implementation if needed."""
+    pass
+
+
 # Initialize logging when this module is imported
 logger = configure_logging()
