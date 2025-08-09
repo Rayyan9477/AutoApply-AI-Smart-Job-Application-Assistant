@@ -1,54 +1,33 @@
 """
-Main module for job application automation.
-This module orchestrates the entire job application process, from searching for jobs
-to applying with personalized resumes and cover letters.
+Core job application functionality.
+This module provides the main JobApplicationAutomation class that orchestrates
+the entire job application process.
 """
 
 import os
 import json
 import asyncio
 import logging
-import argparse
 from typing import Dict, Any, List, Optional
-from datetime import datetime
-from tenacity import retry, stop_after_attempt, wait_exponential
-import random
 from pathlib import Path
 
-# Import configuration and DI container
+from browser_automation import JobSearchBrowser
+from web_scraping import JobDetailsScraper
+from linkedin_integration import LinkedInIntegration
+from resume_cover_letter_generator import ResumeGenerator
+from application_tracker import ApplicationTracker
+from ats_integration import ATSIntegrationManager
+from utils.path_utils import ensure_dir
+from utils.error_handling import with_retry
 from config.config import get_config
-from src.di import container, injectable, inject, configure_container
-
-# Import interfaces and services
-from src.browser_automation import JobSearchBrowser
-from src.web_scraping import JobDetailsScraper
-from src.linkedin_integration import LinkedInIntegration
-from src.resume_cover_letter_generator import ResumeGenerator
-from src.application_tracker import ApplicationTracker
-from src.ats_integration import ATSIntegrationManager
 
 # Get configuration
 CONFIG = get_config()
 
-# Configure the DI container with application services
-configure_container(CONFIG)
-
-# Get logger
+# Set up logging
 logger = logging.getLogger(__name__)
 
-# Configure logging based on centralized config
-log_dir = Path(CONFIG.logging.log_dir)
-log_dir.mkdir(parents=True, exist_ok=True)
-main_log = Path(CONFIG.data_dir) / "main.log"
-handler = logging.FileHandler(main_log)
-handler.setFormatter(logging.Formatter(CONFIG.logging.format))
-logger.addHandler(handler)
-if CONFIG.logging.console_logging:
-    logger.addHandler(logging.StreamHandler())
-logger.setLevel(CONFIG.logging.level)
 
-
-@injectable()
 class JobApplicationAutomation:
     """
     Main class for job application automation.
@@ -56,30 +35,37 @@ class JobApplicationAutomation:
     """
 
     def __init__(self,
-                 job_search_browser: JobSearchBrowser = inject(JobSearchBrowser),
-                 job_details_scraper: JobDetailsScraper = inject(JobDetailsScraper),
-                 linkedin_integration: LinkedInIntegration = inject(LinkedInIntegration),
-                 resume_generator: ResumeGenerator = inject(ResumeGenerator),
-                 ats_manager: ATSIntegrationManager = inject(ATSIntegrationManager),
-                 application_tracker: ApplicationTracker = inject(ApplicationTracker)):
+            browser_config=None,
+            crawl4ai_config=None,
+            linkedin_config=None,
+            llm_config=None,
+            interactive_mode=True):
         """
-        Initialize the JobApplicationAutomation with injected dependencies.
+        Initialize the JobApplicationAutomation with configuration settings.
         
         Args:
-            job_search_browser: Browser automation service
-            job_details_scraper: Web scraping service
-            linkedin_integration: LinkedIn API integration
-            resume_generator: Resume and cover letter generation service
-            ats_manager: ATS integration manager
-            application_tracker: Application tracking service
+            browser_config: Configuration for browser automation.
+            crawl4ai_config: Configuration for web scraping.
+            linkedin_config: Configuration for LinkedIn integration.
+            llm_config: Configuration for LLM integration.
+            interactive_mode: Whether to allow interactive prompts.
         """
-        # Initialize services
-        self.job_search_browser = job_search_browser
-        self.job_details_scraper = job_details_scraper
-        self.linkedin_integration = linkedin_integration
-        self.resume_generator = resume_generator
-        self.ats_manager = ats_manager
-        self.application_tracker = application_tracker
+        # Initialize configurations
+        self.browser_config = browser_config or CONFIG.browser
+        self.crawl4ai_config = crawl4ai_config or CONFIG.crawl
+        self.linkedin_config = linkedin_config or CONFIG.linkedin
+        self.llm_config = llm_config or CONFIG.llm
+        self.interactive_mode = interactive_mode
+        
+        # Initialize components
+        self.job_search_browser = JobSearchBrowser(self.browser_config)
+        self.job_details_scraper = JobDetailsScraper(self.crawl4ai_config)
+        self.linkedin_integration = LinkedInIntegration(self.linkedin_config)
+        self.resume_generator = ResumeGenerator(self.llm_config)
+        
+        # Initialize ATS integration
+        self.ats_manager = ATSIntegrationManager(self.llm_config)
+        self.ats_manager.load_state()
         
         # Application state
         self.job_listings = []
@@ -88,9 +74,12 @@ class JobApplicationAutomation:
         self.applications_submitted = 0
         
         # Ensure core data directories exist
-        Path(CONFIG.data_dir).mkdir(parents=True, exist_ok=True)
+        ensure_dir(CONFIG.data_dir)
         for sub in ["generated_cover_letters", "ats_reports"]:
-            Path(CONFIG.data_dir, sub).mkdir(exist_ok=True)
+            ensure_dir(Path(CONFIG.data_dir) / sub)
+        
+        # Initialize application tracker
+        self.application_tracker = ApplicationTracker()
         
         logger.info("Job Application Automation initialized")
         
@@ -109,7 +98,7 @@ class JobApplicationAutomation:
             return False
             
         # Create necessary session directories
-        Path(CONFIG.data_dir, "sessions").mkdir(exist_ok=True)
+        ensure_dir(Path(CONFIG.data_dir) / "sessions")
         
         # Authenticate with LinkedIn if needed
         authenticated = await self.linkedin_integration.authenticate()
@@ -138,7 +127,7 @@ class JobApplicationAutomation:
         # Continue anyway, as we can still use web scraping for job search
         return True
         
-    @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
+    @with_retry(max_attempts=3, min_wait=1, max_wait=10)
     async def search_jobs(self, 
                    keywords: List[str], 
                    location: str, 
@@ -185,9 +174,11 @@ class JobApplicationAutomation:
         
         # Save combined job listings to file
         try:
-            with open("../data/combined_job_listings.json", "w") as f:
+            job_listings_path = Path(CONFIG.data_dir) / "combined_job_listings.json"
+            ensure_dir(job_listings_path.parent)
+            with open(job_listings_path, "w") as f:
                 json.dump(combined_job_listings, f, indent=2)
-            logger.info(f"Saved {len(combined_job_listings)} combined job listings")
+            logger.info(f"Saved {len(combined_job_listings)} combined job listings to {job_listings_path}")
         except Exception as e:
             logger.error(f"Error saving combined job listings: {e}")
             
@@ -275,15 +266,17 @@ class JobApplicationAutomation:
         
         # Save filtered jobs to file
         try:
-            with open("../data/filtered_jobs.json", "w") as f:
+            filtered_jobs_path = Path(CONFIG.data_dir) / "filtered_jobs.json"
+            ensure_dir(filtered_jobs_path.parent)
+            with open(filtered_jobs_path, "w") as f:
                 json.dump(filtered_jobs, f, indent=2)
-            logger.info(f"Saved {len(filtered_jobs)} filtered jobs")
+            logger.info(f"Saved {len(filtered_jobs)} filtered jobs to {filtered_jobs_path}")
         except Exception as e:
             logger.error(f"Error saving filtered jobs: {e}")
             
         return filtered_jobs
         
-    @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
+    @with_retry(max_attempts=3, min_wait=1, max_wait=10)
     async def generate_and_apply(self, 
                           filtered_jobs: List[Dict[str, Any]],
                           max_applications: int = 5,
@@ -500,6 +493,7 @@ class JobApplicationAutomation:
         
         return applications_submitted
         
+    @with_retry(max_attempts=3)
     def _load_candidate_profile(self) -> bool:
         """
         Load the candidate profile from file or create a default one.
@@ -507,11 +501,11 @@ class JobApplicationAutomation:
         Returns:
             True if loading was successful, False otherwise.
         """
-        profile_path = "../data/candidate_profile.json"
+        profile_path = Path(CONFIG.data_dir) / "candidate_profile.json"
         
         try:
             # Check if profile file exists
-            if os.path.exists(profile_path):
+            if profile_path.exists():
                 with open(profile_path, "r") as f:
                     self.candidate_profile = json.load(f)
                 logger.info("Loaded candidate profile from file")
@@ -564,6 +558,9 @@ class JobApplicationAutomation:
                     "Google Cloud Professional Data Engineer"
                 ]
             }
+            
+            # Ensure directory exists
+            ensure_dir(profile_path.parent)
             
             # Save default profile
             with open(profile_path, "w") as f:
@@ -622,183 +619,7 @@ class JobApplicationAutomation:
         except Exception as e:
             logger.error(f"Error calculating match score: {e}")
             return 0.5  # Default score on error
-
+    
     def generate_ats_performance_report(self) -> str:
         """Generate a report on ATS performance over time."""
         return self.ats_manager.generate_ats_performance_report()
-
-
-async def run_job_application_process(args):
-    """
-    Run the job application process with the specified arguments.
-    
-    Args:
-        args: Command-line arguments.
-    """
-    # Initialize the automation system
-    automation = JobApplicationAutomation()
-    
-    # Setup
-    setup_success = await automation.setup()
-    if not setup_success:
-        logger.error("Failed to set up job application automation")
-        return
-        
-    # Search for jobs
-    job_listings = await automation.search_jobs(
-        keywords=args.keywords,
-        location=args.location,
-        use_linkedin=not args.no_linkedin,
-        use_browser=not args.no_browser,
-        job_site=args.job_site
-    )
-    
-    if not job_listings:
-        logger.error("No job listings found")
-        print("\nNo job listings were found matching your search criteria. Possible solutions:")
-        print("1. Try different keywords or location")
-        print("2. Check your internet connection")
-        print("3. LinkedIn might be rate-limiting access - try again later")
-        print("4. Consider signing in to LinkedIn for better results")
-        
-        # Create a dummy job listing for demonstration purposes if requested
-        if args.demo_mode or args.create_samples:
-            logger.info("Creating sample job listings for demonstration")
-            job_listings = [
-                {
-                    "job_title": "Sample Software Engineer Position",
-                    "company": "Example Tech Company",
-                    "location": args.location,
-                    "job_description": "This is a sample job description for demonstration purposes. " +
-                                      "Requirements: Python, JavaScript, SQL. Experience with cloud platforms preferred.",
-                    "url": "https://www.linkedin.com/jobs/",
-                    "source": "Sample"
-                },
-                {
-                    "job_title": "Sample Data Scientist",
-                    "company": "Demo Analytics Inc.",
-                    "location": args.location,
-                    "job_description": "Sample data scientist position requiring experience with machine learning, " +
-                                      "Python, and data visualization. Must have strong analytical skills.",
-                    "url": "https://www.linkedin.com/jobs/",
-                    "source": "Sample"
-                }
-            ]
-            print("\nCreated sample job listings for demonstration purposes.")
-        else:
-            return
-        
-    # Scrape job details
-    job_details = await automation.scrape_job_details(max_jobs=args.max_jobs)
-    
-    if not job_details and not args.demo_mode and not args.create_samples:
-        logger.error("No job details found")
-        print("\nCould not retrieve job details. This may happen if:")
-        print("1. The job listings don't have enough information")
-        print("2. There are connection issues with the job posting websites")
-        print("3. The websites have changed their structure")
-        return
-    
-    # If in demo mode and no details were scraped, use the sample listings as details
-    if not job_details and (args.demo_mode or args.create_samples):
-        job_details = job_listings
-    
-    # Filter jobs
-    required_skills = args.required_skills.split(",") if args.required_skills else None
-    excluded_keywords = args.excluded_keywords.split(",") if args.excluded_keywords else None
-    
-    filtered_jobs = await automation.filter_jobs(
-        min_match_score=args.min_match_score,
-        required_skills=required_skills,
-        excluded_keywords=excluded_keywords
-    )
-    
-    if not filtered_jobs:
-        logger.error("No jobs passed the filtering criteria")
-        print("\nNo jobs passed the filtering criteria. Consider:")
-        print("1. Lowering the minimum match score")
-        print("2. Adjusting your required skills")
-        print("3. Updating your candidate profile to better match job requirements")
-        return
-        
-    # Generate resumes/cover letters and apply
-    applications = await automation.generate_and_apply(
-        filtered_jobs=filtered_jobs,
-        max_applications=args.max_applications,
-        auto_apply=args.auto_apply,
-        min_ats_score=args.min_ats_score,
-        auto_optimize_resume=args.auto_optimize_resume
-    )
-    
-    logger.info(f"Job application process completed. Applications submitted: {applications}")
-    
-    if applications > 0:
-        print(f"\nSuccessfully submitted {applications} job applications.")
-    else:
-        print("\nNo applications were submitted. Resume and cover letter files were generated for manual application.")
-    
-    # Print final stats
-    stats = automation.application_tracker.get_application_stats()
-    print(f"\nApplication Summary:")
-    print(f"- Total jobs processed: {stats['total']}")
-    print(f"- Applications submitted: {applications}")
-    print(f"- Pending for manual review: {stats.get('pending', 0)}")
-    print(f"- Failed applications: {stats.get('failed', 0) + stats.get('error', 0)}")
-
-
-def parse_arguments():
-    """
-    Parse command-line arguments.
-    
-    Returns:
-        Parsed arguments.
-    """
-    parser = argparse.ArgumentParser(description="Automated job application tool")
-    
-    # Job search parameters
-    parser.add_argument("--keywords", type=str, nargs="+", default=["software engineer", "python"],
-                      help="Keywords for job search")
-    parser.add_argument("--location", type=str, default="Remote",
-                      help="Location for job search")
-    parser.add_argument("--job-site", type=str, default="linkedin", 
-                      choices=["linkedin", "indeed", "glassdoor"],
-                      help="Job site to search on with browser automation")
-    
-    # Component selection
-    parser.add_argument("--no-linkedin", action="store_true",
-                      help="Disable LinkedIn API search")
-    parser.add_argument("--no-browser", action="store_true",
-                      help="Disable browser automation search")
-    
-    # Job filtering parameters
-    parser.add_argument("--max-jobs", type=int, default=10,
-                      help="Maximum number of jobs to scrape details for")
-    parser.add_argument("--min-match-score", type=float, default=0.7,
-                      help="Minimum match score (0-1) for job filtering")
-    parser.add_argument("--required-skills", type=str,
-                      help="Comma-separated list of required skills")
-    parser.add_argument("--excluded-keywords", type=str,
-                      help="Comma-separated list of keywords to exclude")
-    
-    # Application parameters
-    parser.add_argument("--max-applications", type=int, default=5,
-                      help="Maximum number of applications to submit")
-    parser.add_argument("--auto-apply", action="store_true",
-                      help="Enable automatic application submission")
-    parser.add_argument("--min-ats-score", type=float, default=0.7,
-                      help="Minimum ATS score (0-1) required for application")
-    parser.add_argument("--auto-optimize-resume", action="store_true",
-                      help="Automatically optimize resumes that don't meet ATS threshold")
-    
-    # Debug and demonstration options
-    parser.add_argument("--demo-mode", action="store_true",
-                      help="Run in demonstration mode with sample data when no results are found")
-    parser.add_argument("--create-samples", action="store_true",
-                      help="Create sample job listings if none are found")
-    
-    return parser.parse_args()
-
-
-if __name__ == "__main__":
-    args = parse_arguments()
-    asyncio.run(run_job_application_process(args))

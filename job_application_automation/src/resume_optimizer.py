@@ -1152,15 +1152,21 @@ class ResumeOptimizer:
         
         system_prompt = "You are an expert resume optimizer that makes resumes score higher on ATS systems."
         
-        # Try using our direct LLM integration first
-        if self.llm_client:
-            result = self.get_llm_response(system_prompt, prompt)
-        else:
-            # Fall back to resume generator if direct integration isn't available
-            result = self.resume_generator._generate_text(
-                prompt=prompt,
-                system_prompt=system_prompt
-            )
+        # Use unified LLM client for provider agility; fallback to existing paths
+        try:
+            from src.services.llm_client import LLMClient
+            client = LLMClient(getattr(self, 'llama_config', None))
+            result = client.generate(system_prompt=system_prompt, user_prompt=prompt, max_tokens=1200)
+            if not result:
+                raise RuntimeError("Empty LLM result")
+        except Exception:
+            if self.llm_client:
+                result = self.get_llm_response(system_prompt, prompt)
+            else:
+                result = self.resume_generator._generate_text(
+                    prompt=prompt,
+                    system_prompt=system_prompt
+                )
         
         # Parse the generated content
         optimized_data = self._parse_generated_resume(result, resume_data)

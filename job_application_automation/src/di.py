@@ -171,15 +171,15 @@ def configure_container(config: dict) -> None:
     Args:
         config: Application configuration object or dictionary
     """
-    from config.config import ApplicationConfig, get_config
+    from job_application_automation.config.config import ApplicationConfig, get_config
     
     # Import services using relative imports since we're in the src directory
-    from browser_automation import JobSearchBrowser
-    from web_scraping import JobDetailsScraper
-    from linkedin_integration import LinkedInIntegration
-    from resume_cover_letter_generator import ResumeGenerator
-    from application_tracker import ApplicationTracker
-    from ats_integration import ATSIntegrationManager
+    from src.browser_automation import JobSearchBrowser
+    from src.web_scraping import JobDetailsScraper
+    from src.linkedin_integration import LinkedInIntegration
+    from src.resume_cover_letter_generator import ResumeGenerator
+    from src.application_tracker import ApplicationTracker
+    from src.ats_integration import ATSIntegrationManager
     
     # Bind configuration
     if not isinstance(config, ApplicationConfig):

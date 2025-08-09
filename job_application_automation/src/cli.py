@@ -29,8 +29,8 @@ from src.smart_apply import SmartJobApplicant
 from src.ats_cli import analyze_resume, batch_analyze_resumes
 from src.manage_db import cli as db_cli
 from src.application_tracker import ApplicationTracker
-from config.config import get_config
-from config.logging_config import configure_logging
+from job_application_automation.config.config import get_config  # fallback if executed from package root
+from job_application_automation.config.logging_config import configure_logging
 
 # Configure logging
 logger = configure_logging()

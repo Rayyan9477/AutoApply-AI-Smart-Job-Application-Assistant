@@ -146,7 +146,8 @@ job_application_automation/
 
 3.  **Install dependencies:**
     ```bash
-    pip install -r requirements.txt
+    # From project root
+    pip install -r job_application_automation/requirements.txt
     ```
     *(If `llama-cpp-python` is needed for local models and not in `requirements.txt`, you might need to install it separately, potentially with GPU support flags like `CMAKE_ARGS="-DLLAMA_CUBLAS=on" pip install llama-cpp-python`)*
 
@@ -156,7 +157,7 @@ job_application_automation/
     Navigate to the `job_application_automation` directory. Copy the <mcfile name=".env.example" path="c:\Users\rayyan.a\PycharmProjects\linkedin\job_application_automation\.env.example"></mcfile> file to `.env`:
     ```bash
     cp .env.example .env  # For macOS/Linux
-    # copy .env.example .env  # For Windows
+     # copy .env.example .env  # For Windows
     ```
     Edit the `.env` file with your specific configurations. Key variables to set (refer to <mcfile name="llama_config.py" path="c:\Users\rayyan.a\PycharmProjects\linkedin\job_application_automation\config\llama_config.py"></mcfile> for details):
     ```env
@@ -193,9 +194,9 @@ job_application_automation/
     The application uses SQLAlchemy and Alembic for database management (tracking job applications).
     Initialize or upgrade the database schema:
     ```bash
-    alembic upgrade head
+     cd job_application_automation && alembic upgrade head
     ```
-    This command should be run from the `job_application_automation` directory where `alembic.ini` is located. This will create/update the `job_applications.db` file in the `data/` directory.
+    This command should be run from the `job_application_automation` directory where `alembic.ini` is located. This will create/update the `job_applications.db` file in the `job_application_automation/data/` directory.
 
 3.  **Candidate Profile:**
     Create or update your candidate profile in `data/candidate_profile.json`. This file is used to personalize resumes and cover letters. An example structure might be:
@@ -235,9 +236,10 @@ The primary way to run the application is likely through <mcfile name="smart_app
 
 1.  **Run the application:**
     ```bash
-    python src/smart_apply.py 
+    cd job_application_automation
+    python src/cli.py search --keywords "python,ai" --location "Remote"
     ```
-    *(Or `python src/main.py` - check the specific entry point and any required command-line arguments.)*
+    *(Or `python src/main.py` for the end-to-end flow.)*
 
 2.  **Interactive Mode / CLI:**
     The application might offer an interactive command-line interface to:

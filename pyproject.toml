@@ -16,3 +16,10 @@ dependencies = [
     "sqlalchemy>=2.0.40",
     "structlog>=25.2.0",
 ]
+
+[tool.setuptools]
+package-dir = {"" = "job_application_automation/src"}
+packages = ["find:"]
+
+[tool.setuptools.packages.find]
+where = ["job_application_automation/src"]

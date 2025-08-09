@@ -630,25 +630,30 @@ class ResumeGenerator:
         try:
             prompt = self._prepare_resume_prompt(job_description, candidate_profile)
             
-            # Generate resume content using available method (API or local LLM)
-            resume_content = self.generate_text(prompt)
+            # Generate resume content using unified client for provider agility
+            try:
+                from src.services.llm_client import LLMClient
+                client = LLMClient(self.config)
+                resume_content = client.generate(
+                    system_prompt="You are a helpful assistant specialized in writing professional resumes.",
+                    user_prompt=prompt,
+                    max_tokens=min(4000, self.config.context_length),
+                ) or self._template_based_fallback(prompt)
+            except Exception:
+                resume_content = self.generate_text(prompt)
             
-            # Save to file
+            # Compute default output path
             if not output_path:
-                # Create a unique filename based on timestamp and job details
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
                 job_title = candidate_profile.get("target_job_title", "resume")
                 output_dir = os.path.join(project_root, "data", "generated_resumes")
                 os.makedirs(output_dir, exist_ok=True)
                 output_path = os.path.join(output_dir, f"{timestamp}_{job_title.replace(' ', '_')}.docx")
-            
-            # Save the resume (implementation depends on your format/template needs)
-            # This is a simplified example
-            with open(output_path, "w", encoding="utf-8") as f:
-                f.write(resume_content)
-            
-            logger.info(f"Generated resume saved to {output_path}")
-            return output_path, resume_content
+
+            # Create a proper document (template if available)
+            final_path = self._create_resume_document(resume_content, output_path)
+            logger.info(f"Generated resume saved to {final_path}")
+            return final_path, resume_content
             
         except Exception as e:
             logger.error(f"Error generating resume: {e}")
@@ -687,27 +692,31 @@ class ResumeGenerator:
                 referral_info
             )
             
-            # Generate cover letter content using available method (API or local LLM)
-            cover_letter_content = self.generate_text(prompt)
+            # Generate cover letter content using unified client for provider agility
+            try:
+                from src.services.llm_client import LLMClient
+                client = LLMClient(self.config)
+                cover_letter_content = client.generate(
+                    system_prompt="You are a helpful assistant specialized in writing professional cover letters.",
+                    user_prompt=prompt,
+                    max_tokens=min(3000, self.config.context_length),
+                ) or self._template_based_fallback(prompt)
+            except Exception:
+                cover_letter_content = self.generate_text(prompt)
             
-            # Save to file
+            # Compute default output path
             if not output_path:
-                # Create a unique filename based on timestamp and job details
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                job_title = "cover_letter"  # Extract from job description if possible
-                if "title" in job_description.lower():
-                    job_title = job_description.split("title")[1].split("\n")[0].strip()[:30]
+                job_title = "cover_letter"
                 output_dir = os.path.join(project_root, "data", "generated_cover_letters")
                 os.makedirs(output_dir, exist_ok=True)
                 output_path = os.path.join(output_dir, f"{timestamp}_{job_title.replace(' ', '_')}.docx")
-            
-            # Save the cover letter (implementation depends on your format/template needs)
-            # This is a simplified example
-            with open(output_path, "w", encoding="utf-8") as f:
-                f.write(cover_letter_content)
-            
-            logger.info(f"Generated cover letter saved to {output_path}")
-            return output_path, cover_letter_content
+
+            # Create a proper document using template when available
+            template_path = self.template_manager.get_template_path(template_type)
+            final_path = self._create_cover_letter_document(cover_letter_content, str(template_path), output_path)
+            logger.info(f"Generated cover letter saved to {final_path}")
+            return final_path, cover_letter_content
             
         except Exception as e:
             logger.error(f"Error generating cover letter: {e}")
@@ -1014,6 +1023,38 @@ class ResumeGenerator:
                 f.write(content)
             
             logger.info(f"Saved resume as plain text at {text_path}")
+            return text_path
+
+    def _create_cover_letter_document(self, content: str, template_path: str, output_path: str) -> str:
+        """
+        Create a properly formatted cover letter document from generated content.
+        Uses a template if available, otherwise creates a simple DOCX.
+        """
+        try:
+            # If template exists and is a docx template, try to render with a simple context
+            if os.path.exists(template_path):
+                try:
+                    doc = DocxTemplate(template_path)
+                    context = {"content": content}
+                    doc.render(context)
+                    doc.save(output_path)
+                    logger.info(f"Rendered cover letter using template at {output_path}")
+                    return output_path
+                except Exception as e:
+                    logger.warning(f"Failed to render cover letter with template: {e}. Falling back to plain document.")
+
+            # Fallback: write a simple DOCX with paragraphs
+            doc = Document()
+            for paragraph in content.split("\n\n"):
+                if paragraph.strip():
+                    doc.add_paragraph(paragraph.strip())
+            doc.save(output_path)
+            return output_path
+        except Exception as e:
+            logger.error(f"Error creating cover letter document: {e}")
+            text_path = output_path.replace(".docx", ".txt")
+            with open(text_path, "w", encoding="utf-8") as f:
+                f.write(content)
             return text_path
             
     def _parse_resume_sections(self, content: str) -> Dict[str, Any]:

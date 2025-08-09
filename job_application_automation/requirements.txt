@@ -71,3 +71,9 @@ textblob
 
 # Google Generative AI
 google-generativeai>=0.3.0  # For Gemini API integration
+azure-ai-inference>=1.0.0b7
+
+# API server
+fastapi>=0.111.0
+uvicorn[standard]>=0.30.0
+streamlit>=1.36.0
